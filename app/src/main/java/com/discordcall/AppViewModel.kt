@@ -70,6 +70,9 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
 
     private val prefs get() = getApplication<Application>().getSharedPreferences("app_prefs", 0)
 
+    // Public helper so Composables can access Application context
+    fun getApp(): Application = getApplication()
+
     init {
         val saved = prefs.getString("token", null)
         if (!saved.isNullOrEmpty()) {
@@ -475,7 +478,7 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
     fun answerIncomingCall() {
         val call = incomingCall ?: return
         val dm   = dmChannels.find { it.id == call.channelId } ?: run {
-            val fake = DmChannel(
+            DmChannel(
                 id         = call.channelId,
                 type       = 1,
                 recipients = listOf(DmRecipient(call.callerId, call.callerName, null, call.callerAvatar)),
@@ -483,7 +486,6 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
                 icon       = null,
                 lastMessageId = null
             )
-            fake
         }
         incomingCall  = null
         activeDmCall  = dm
@@ -582,6 +584,3 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
 }
 
 enum class HomeTab { SERVERS, DMS }
-
-fun mutableStateMapOf(): androidx.compose.runtime.snapshots.SnapshotStateMap<String, List<VoiceState>> =
-    androidx.compose.runtime.mutableStateMapOf()
