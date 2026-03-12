@@ -45,7 +45,7 @@ fun ActiveCallScreen(
     LaunchedEffect(vm.isInCall) {
         if (vm.isInCall) {
             CallService.start(
-                getApplication(),
+                vm.getApp(),
                 channel.name
             )
         }
@@ -472,7 +472,7 @@ private fun CallSettingsSheet(vm: AppViewModel, onDismiss: () -> Unit) {
                 .background(AppColors.Surface)
                 .clickable {}
                 .padding(20.dp)
-                .verticalScroll(rememberScrollState())
+                .verticalScroll(androidx.compose.foundation.rememberScrollState())
         ) {
             Row(
                 Modifier.fillMaxWidth(),
@@ -493,7 +493,12 @@ private fun CallSettingsSheet(vm: AppViewModel, onDismiss: () -> Unit) {
             Spacer(Modifier.height(16.dp))
             SettingsSectionTitle("Vídeo")
             Text("Qualidade de vídeo", fontSize = 14.sp, color = AppColors.TextSecondary, modifier = Modifier.padding(bottom = 8.dp))
-            Row(Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            Row(
+                Modifier
+                    .fillMaxWidth()
+                    .horizontalScroll(androidx.compose.foundation.rememberScrollState()),
+                horizontalArrangement = Arrangement.spacedBy(8.dp)
+            ) {
                 VideoQuality.values().forEach { q ->
                     FilterChip(
                         selected = vm.videoQuality == q,
@@ -572,10 +577,5 @@ private fun InviteSheet(vm: AppViewModel, onDismiss: () -> Unit) {
         }
     }
 }
-
-private fun rememberScrollState() = androidx.compose.foundation.rememberScrollState()
-private fun Modifier.horizontalScroll(state: androidx.compose.foundation.ScrollState) = this.then(
-    androidx.compose.foundation.Modifier.horizontalScroll(state)
-)
 
 private val FontFamily.Companion.Monospace get() = androidx.compose.ui.text.font.FontFamily.Monospace
