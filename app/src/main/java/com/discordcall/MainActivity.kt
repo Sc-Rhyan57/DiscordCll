@@ -1,169 +1,213 @@
 package com.discordcall
 
-import android.content.Context
-import android.os.Build
 import android.os.Bundle
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.viewModels
 import androidx.compose.animation.*
-import androidx.compose.animation.core.tween
-import androidx.compose.foundation.layout.Box
-import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.animation.core.*
+import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
+import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.outlined.BugReport
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import java.io.PrintWriter
-import java.io.StringWriter
-
-private const val PREF_CRASH      = "crash_prefs"
-private const val KEY_CRASH_TRACE = "crash_trace"
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.unit.dp
 
 class MainActivity : ComponentActivity() {
-
     private val vm: AppViewModel by viewModels()
-
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
-        setupCrashHandler()
-
-        val crashPrefs = getSharedPreferences(PREF_CRASH, Context.MODE_PRIVATE)
-        val crashTrace = crashPrefs.getString(KEY_CRASH_TRACE, null)
-        if (crashTrace != null) crashPrefs.edit().remove(KEY_CRASH_TRACE).apply()
-
-        setContent {
-            MaterialTheme(colorScheme = DiscordDarkColorScheme) {
-                Surface(Modifier.fillMaxSize(), color = AppColors.Background) {
-                    if (crashTrace != null) {
-                        CrashScreen(trace = crashTrace) {
-                            android.os.Process.killProcess(android.os.Process.myPid())
-                        }
-                    } else {
-                        AppRoot(vm)
-                    }
-                }
-            }
-        }
+        setContent { AppRoot(vm) }
     }
+}
 
-    private fun setupCrashHandler() {
-        val def = Thread.getDefaultUncaughtExceptionHandler()
-        Thread.setDefaultUncaughtExceptionHandler { t, e ->
-            try {
-                val sw = StringWriter()
-                e.printStackTrace(PrintWriter(sw))
-                val log = buildString {
-                    appendLine("Discord Call — Crash Report")
-                    appendLine("Manufacturer: ${Build.MANUFACTURER}")
-                    appendLine("Device: ${Build.MODEL}")
-                    appendLine("Android: ${Build.VERSION.RELEASE}")
-                    appendLine("Version: ${BuildConfig.VERSION_NAME}")
-                    appendLine("Stacktrace:")
-                    append(sw.toString())
-                }
-                getSharedPreferences(PREF_CRASH, Context.MODE_PRIVATE)
-                    .edit().putString(KEY_CRASH_TRACE, log).commit()
-                startActivity(
-                    android.content.Intent(this, MainActivity::class.java).apply {
-                        addFlags(android.content.Intent.FLAG_ACTIVITY_NEW_TASK or android.content.Intent.FLAG_ACTIVITY_CLEAR_TASK)
-                    }
-                )
-            } catch (_: Exception) {
-                def?.uncaughtException(t, e)
-            }
-            android.os.Process.killProcess(android.os.Process.myPid())
-            System.exit(2)
-        }
-    }
+/** Navigation state — all in one sealed class to prevent null pointer during animated transitions */
+sealed class Screen {
+    object Login          : Screen()
+    object Home           : Screen()
+    object GuildChannels  : Screen()
+    object ChannelLobby   : Screen()
+    object ActiveCall     : Screen()
+    object DmList         : Screen()
+    object DmCallScreen   : Screen()
 }
 
 @Composable
 fun AppRoot(vm: AppViewModel) {
-    var footerClicks by remember { mutableStateOf(0) }
-    var showLogs     by remember { mutableStateOf(false) }
+    var screen        by remember { mutableStateOf<Screen>(Screen.Login) }
+    var footerClicks  by remember { mutableStateOf(0) }
+    var showConsole   by remember { mutableStateOf(false) }
 
-    fun onFooterClick() {
-        footerClicks++
-        if (footerClicks >= 5) { showLogs = true; footerClicks = 0 }
+    // Derive screen from VM state changes safely
+    LaunchedEffect(vm.isLoggedIn) {
+        screen = if (vm.isLoggedIn) Screen.Home else Screen.Login
+    }
+    LaunchedEffect(vm.isInCall, vm.selectedChannel) {
+        if (vm.isInCall && vm.selectedChannel != null && screen != Screen.ActiveCall) {
+            screen = Screen.ActiveCall
+        }
+    }
+    LaunchedEffect(vm.activeDmCall, vm.dmCallState) {
+        if (vm.activeDmCall != null && screen != Screen.DmCallScreen) {
+            screen = Screen.DmCallScreen
+        } else if (vm.activeDmCall == null && screen == Screen.DmCallScreen) {
+            screen = Screen.Home
+        }
     }
 
-    if (showLogs) {
-        LogsScreen(onClose = { showLogs = false })
-        return
-    }
-
-    val screen = when {
-        !vm.isLoggedIn                              -> "login"
-        vm.isInCall && vm.activeDmCall != null      -> "dm_call"
-        vm.isInCall                                 -> "call"
-        vm.activeDmCall != null                     -> "dm_call"
-        vm.selectedDmChannel != null                -> "dm_chat"
-        vm.selectedChannel != null                  -> "lobby"
-        vm.selectedGuild != null                    -> "channels"
-        vm.homeTab == HomeTab.DMS                   -> "dms"
-        else                                        -> "guilds"
-    }
-
-    Box(Modifier.fillMaxSize()) {
-        AnimatedContent(
-            targetState  = screen,
-            transitionSpec = { fadeIn(tween(220)) togetherWith fadeOut(tween(220)) },
-            label        = "nav"
-        ) { s ->
-            when (s) {
-                "login" -> LoginScreen(
-                    vm            = vm,
-                    footerClicks  = footerClicks,
-                    onFooterClick = ::onFooterClick
-                )
-                "guilds" -> HomeScreen(
-                    vm            = vm,
-                    footerClicks  = footerClicks,
-                    onFooterClick = ::onFooterClick
-                )
-                "dms" -> HomeScreen(
-                    vm            = vm,
-                    footerClicks  = footerClicks,
-                    onFooterClick = ::onFooterClick
-                )
-                "channels" -> ChannelPickerScreen(
-                    vm     = vm,
-                    onBack = { vm.selectedGuild = null },
-                    onChannelSelected = { channel -> vm.selectChannel(channel) }
-                )
-                "lobby" -> ChannelLobbyScreen(
-                    vm     = vm,
-                    onBack = { vm.selectedChannel = null },
-                    onJoin = { vm.joinVoiceChannel(vm.selectedChannel!!) }
-                )
-                "call" -> ActiveCallScreen(
-                    vm       = vm,
-                    onHangup = { vm.leaveVoiceChannel() }
-                )
-                "dm_call" -> DmCallScreen(
-                    vm       = vm,
-                    dm       = vm.activeDmCall!!,
-                    onHangUp = {
-                        vm.leaveDmCall()
-                        vm.selectedDmChannel = null
+    MaterialTheme(colorScheme = darkColorScheme()) {
+        Box(Modifier.fillMaxSize()) {
+            AnimatedContent(
+                targetState = screen,
+                transitionSpec = {
+                    fadeIn(tween(220)) togetherWith fadeOut(tween(180))
+                },
+                label = "nav"
+            ) { target ->
+                when (target) {
+                    Screen.Login -> LoginScreen(
+                        vm            = vm,
+                        footerClicks  = footerClicks,
+                        onFooterClick = {
+                            footerClicks++
+                            if (footerClicks >= 5) { showConsole = true; footerClicks = 0 }
+                        }
+                    )
+                    Screen.Home -> HomeScreen(
+                        vm            = vm,
+                        footerClicks  = footerClicks,
+                        onFooterClick = {
+                            footerClicks++
+                            if (footerClicks >= 5) { showConsole = true; footerClicks = 0 }
+                        },
+                        onGuildSelected = { guild ->
+                            vm.selectGuild(guild)
+                            screen = Screen.GuildChannels
+                        },
+                        onDmCallStart  = { screen = Screen.DmCallScreen },
+                        onLogout       = {
+                            vm.logout()
+                            screen = Screen.Login
+                        }
+                    )
+                    Screen.GuildChannels -> {
+                        // Guard against null guild — go back home instead of crashing
+                        val guild = vm.selectedGuild
+                        if (guild == null) {
+                            screen = Screen.Home
+                        } else {
+                            GuildChannelScreen(
+                                vm        = vm,
+                                guild     = guild,
+                                onBack    = { screen = Screen.Home },
+                                onChannel = { ch ->
+                                    vm.selectChannel(ch)
+                                    screen = Screen.ChannelLobby
+                                }
+                            )
+                        }
                     }
-                )
-                "dm_chat" -> DmChatScreen(
-                    vm     = vm,
-                    dm     = vm.selectedDmChannel!!,
-                    onBack = { vm.selectedDmChannel = null },
-                    onCall = { vm.startDmCall(vm.selectedDmChannel!!) }
+                    Screen.ChannelLobby -> {
+                        val channel = vm.selectedChannel
+                        if (channel == null) {
+                            screen = Screen.GuildChannels
+                        } else {
+                            ChannelLobbyScreen(
+                                vm     = vm,
+                                onBack = { screen = Screen.GuildChannels },
+                                onJoin = {
+                                    vm.joinVoiceChannel(channel)
+                                    screen = Screen.ActiveCall
+                                }
+                            )
+                        }
+                    }
+                    Screen.ActiveCall -> {
+                        val channel = vm.selectedChannel
+                        if (channel == null) {
+                            screen = Screen.GuildChannels
+                        } else {
+                            ActiveCallScreen(
+                                vm       = vm,
+                                onHangup = {
+                                    vm.leaveVoiceChannel()
+                                    screen = Screen.GuildChannels
+                                }
+                            )
+                        }
+                    }
+                    Screen.DmList -> DmListScreen(
+                        vm           = vm,
+                        onDmSelected = { dm -> vm.selectDmChannel(dm) },
+                        onDmCall     = { dm -> vm.startDmCall(dm); screen = Screen.DmCallScreen },
+                        onFriendCall = { r  ->
+                            val existing = vm.dmChannels.find { dm -> dm.recipients.any { it.id == r.id } }
+                            if (existing != null) {
+                                vm.startDmCall(existing)
+                                screen = Screen.DmCallScreen
+                            } else {
+                                vm.openDmChannel(r)
+                            }
+                        }
+                    )
+                    Screen.DmCallScreen -> {
+                        val dm = vm.activeDmCall
+                        if (dm == null) {
+                            screen = Screen.Home
+                        } else {
+                            DmCallScreen(
+                                vm       = vm,
+                                dm       = dm,
+                                onHangUp = {
+                                    vm.leaveDmCall()
+                                    screen = Screen.Home
+                                }
+                            )
+                        }
+                    }
+                }
+            }
+
+            // Incoming call overlay — shown on top of everything
+            val incoming = vm.incomingCall
+            if (incoming != null) {
+                IncomingCallOverlay(
+                    call      = incoming,
+                    onAnswer  = { vm.answerIncomingCall(); screen = Screen.DmCallScreen },
+                    onDecline = { vm.declineIncomingCall() }
                 )
             }
-        }
 
-        val incoming = vm.incomingCall
-        if (incoming != null) {
-            IncomingCallOverlay(
-                call      = incoming,
-                onAnswer  = { vm.answerIncomingCall() },
-                onDecline = { vm.declineIncomingCall() }
-            )
+            // Global floating console button — always accessible
+            Box(
+                Modifier
+                    .align(Alignment.TopEnd)
+                    .padding(top = 48.dp, end = 12.dp)
+            ) {
+                Box(
+                    Modifier
+                        .size(38.dp)
+                        .clip(CircleShape)
+                        .background(AppColors.SurfaceVar.copy(0.85f))
+                        .clickable { showConsole = true },
+                    contentAlignment = Alignment.Center
+                ) {
+                    Icon(Icons.Outlined.BugReport, null, tint = AppColors.TextMuted, modifier = Modifier.size(18.dp))
+                }
+            }
+
+            // Console overlay
+            if (showConsole) {
+                ConsoleOverlay(vm = vm, onDismiss = { showConsole = false })
+            }
         }
     }
 }
