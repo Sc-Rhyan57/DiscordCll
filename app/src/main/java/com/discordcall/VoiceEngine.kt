@@ -61,8 +61,8 @@ class VoiceEngine(private val context: Context) {
         Logger.s("VoiceEngine", "PeerConnectionFactory initialized")
     }
 
-    private fun createAudioDeviceModule(): AudioDeviceModule {
-        return JavaAudioDeviceModule.builder(context)
+    private fun createAudioDeviceModule(): org.webrtc.audio.JavaAudioDeviceModule {
+        return org.webrtc.audio.JavaAudioDeviceModule.builder(context)
             .setUseHardwareAcousticEchoCanceler(true)
             .setUseHardwareNoiseSuppressor(true)
             .createAudioDeviceModule()
