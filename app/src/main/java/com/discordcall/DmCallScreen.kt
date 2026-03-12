@@ -300,18 +300,19 @@ private fun ParticipantsGrid(
         participants.size <= 4 -> 2
         else                   -> 3
     }
-    LazyVerticalGridCompat(
-        columns   = cols,
-        items     = participants,
-        modifier  = Modifier.fillMaxSize().padding(8.dp),
-        content   = { vs ->
+    androidx.compose.foundation.lazy.grid.LazyVerticalGrid(
+        columns   = androidx.compose.foundation.lazy.grid.GridCells.Fixed(cols),
+        modifier  = Modifier.fillMaxSize().padding(8.dp)
+    ) {
+        items(participants.size) { idx ->
+            val vs = participants[idx]
             CallParticipantTile(
                 vs            = vs,
                 isSelf        = vs.userId == currentUserId,
                 isSpeaking    = vs.speaking || vs.userId == currentSpeaker
             )
         }
-    )
+    }
 }
 
 @Composable
@@ -336,9 +337,9 @@ private fun CallParticipantTile(
     ) {
         Column(horizontalAlignment = Alignment.CenterHorizontally) {
             UserAvatar(
-                avatarUrl  = vs.avatarUrl(128),
-                isSpeaking = isSpeaking,
-                size       = 56.dp
+                url       = vs.avatarUrl(128),
+                size      = 56.dp,
+                speaking  = isSpeaking
             )
             Spacer(Modifier.height(8.dp))
             Text(
@@ -407,19 +408,3 @@ private fun DmCallControls(
         )
     }
 }
-
-@Composable
-private fun LazyVerticalGridCompat(
-    columns: Int,
-    items: List<VoiceState>,
-    modifier: Modifier = Modifier,
-    content: @Composable (VoiceState) -> Unit
-) {
-    androidx.compose.foundation.lazy.grid.LazyVerticalGrid(
-        columns   = androidx.compose.foundation.lazy.grid.GridCells.Fixed(columns),
-        modifier  = modifier
-    ) {
-        items(items.size) { idx -> content(items[idx]) }
-    }
-}
-
