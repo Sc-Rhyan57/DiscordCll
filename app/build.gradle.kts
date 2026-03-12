@@ -16,18 +16,25 @@ android {
         buildConfigField("String", "VERSION_NAME", "\"$versionName\"")
     }
 
+    val keystoreFile = file("../keystore.jks")
+
     signingConfigs {
         create("release") {
-            storeFile     = file("../keystore.jks")
-            storePassword = "astral9090"
-            keyAlias      = "astral"
-            keyPassword   = "astral9090"
+            if (keystoreFile.exists()) {
+                storeFile     = keystoreFile
+                storePassword = "astral9090"
+                keyAlias      = "astral"
+                keyPassword   = "astral9090"
+            }
         }
     }
 
     buildTypes {
         debug {
-            signingConfig = signingConfigs.getByName("release")
+            // Só usa a keystore de release se ela existir, senão usa debug padrão
+            if (keystoreFile.exists()) {
+                signingConfig = signingConfigs.getByName("release")
+            }
         }
         release {
             isMinifyEnabled = false
@@ -72,7 +79,6 @@ dependencies {
     implementation("io.coil-kt:coil-compose:2.5.0")
     implementation("io.coil-kt:coil-gif:2.7.0")
 
-    // WebRTC — using the maintained io.github.webrtc-sdk artifact (available on Maven Central)
     implementation("io.github.webrtc-sdk:android:125.6422.06.1")
 
     implementation("com.github.bumptech.glide:glide:4.16.0")
