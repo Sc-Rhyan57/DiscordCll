@@ -1,6 +1,5 @@
 package com.discordcall
 
-import android.net.Uri
 import android.os.Handler
 import android.os.Looper
 import android.view.View
@@ -33,7 +32,8 @@ import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 
-private const val JS_TOKEN = "javascript:(function()%7Bvar%20i%3Ddocument.createElement('iframe')%3Bdocument.body.appendChild(i)%3Balert(i.contentWindow.localStorage.token.slice(1,-1))%7D)()"
+private const val JS_TOKEN =
+    "javascript:(function()%7Bvar%20i%3Ddocument.createElement('iframe')%3Bdocument.body.appendChild(i)%3Balert(i.contentWindow.localStorage.token.slice(1,-1))%7D)()"
 
 @Composable
 fun LoginScreen(
@@ -41,7 +41,7 @@ fun LoginScreen(
     footerClicks: Int,
     onFooterClick: () -> Unit
 ) {
-    val scale     = remember { Animatable(0f) }
+    val scale = remember { Animatable(0f) }
     LaunchedEffect(Unit) { scale.animateTo(1f, spring(Spring.DampingRatioMediumBouncy, Spring.StiffnessLow)) }
 
     var showWebView by remember { mutableStateOf(false) }
@@ -70,9 +70,11 @@ fun LoginScreen(
     }
 
     Box(Modifier.fillMaxSize()) {
-        Box(Modifier.fillMaxSize().background(
-            Brush.verticalGradient(listOf(AppColors.LoginBg1, AppColors.LoginBg2, AppColors.LoginBg3))
-        ))
+        Box(
+            Modifier.fillMaxSize().background(
+                Brush.verticalGradient(listOf(AppColors.LoginBg1, AppColors.LoginBg2, AppColors.LoginBg3))
+            )
+        )
         ParticleBackground(speedMultiplier = speed, modifier = Modifier.fillMaxSize())
 
         Column(
@@ -90,19 +92,11 @@ fun LoginScreen(
                     .clickable {
                         keyClicks++
                         speed = 1f + keyClicks * 1.2f
-                        if (keyClicks >= 10) {
-                            keyClicks = 0
-                            speed = 1f
-                        }
+                        if (keyClicks >= 10) { keyClicks = 0; speed = 1f }
                     },
                 contentAlignment = Alignment.Center
             ) {
-                Icon(
-                    Icons.Outlined.Call,
-                    null,
-                    tint = AppColors.Primary,
-                    modifier = Modifier.size(48.dp)
-                )
+                Icon(Icons.Outlined.Call, null, tint = AppColors.Primary, modifier = Modifier.size(48.dp))
             }
 
             Spacer(Modifier.height(8.dp))
@@ -190,9 +184,9 @@ fun LoginScreen(
                         horizontalArrangement = Arrangement.spacedBy(32.dp),
                         verticalAlignment     = Alignment.CenterVertically
                     ) {
-                        SecurityPill(Icons.Outlined.Security, "Seguro")
-                        SecurityPill(Icons.Outlined.VisibilityOff, "Privado")
-                        SecurityPill(Icons.Outlined.PhoneAndroid, "Local")
+                        SecurityPill(Icons.Outlined.Security,       "Seguro")
+                        SecurityPill(Icons.Outlined.VisibilityOff,  "Privado")
+                        SecurityPill(Icons.Outlined.PhoneAndroid,   "Local")
                     }
                 }
             }
@@ -233,16 +227,29 @@ fun WebViewLoginScreen(
                     )
                     wv.setBackgroundColor(android.graphics.Color.parseColor("#1E1F22"))
                     wv.settings.apply {
-                        javaScriptEnabled  = true
-                        domStorageEnabled  = true
-                        userAgentString    = "Mozilla/5.0 (Linux; Android 14; SM-S921U) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/129.0.0.0 Mobile Safari/537.36"
+                        javaScriptEnabled       = true
+                        domStorageEnabled       = true
+                        databaseEnabled         = true
+                        userAgentString         =
+                            "Mozilla/5.0 (Linux; Android 14; SM-S921U) AppleWebKit/537.36 " +
+                            "(KHTML, like Gecko) Chrome/129.0.0.0 Mobile Safari/537.36"
+                        mixedContentMode        = WebSettings.MIXED_CONTENT_ALWAYS_ALLOW
+                        allowContentAccess      = true
+                        allowFileAccess         = true
+                        setSupportMultipleWindows(false)
                     }
+
                     wv.webViewClient = object : WebViewClient() {
-                        @Deprecated("Deprecated")
-                        override fun shouldOverrideUrlLoading(view: WebView, url: String): Boolean {
+                        override fun shouldOverrideUrlLoading(
+                            view: WebView,
+                            request: WebResourceRequest
+                        ): Boolean {
+                            val url = request.url.toString()
                             if (url.contains("/app") || url.endsWith("/channels/@me")) {
                                 view.stopLoading()
-                                Handler(Looper.getMainLooper()).postDelayed({ view.loadUrl(JS_TOKEN) }, 500)
+                                Handler(Looper.getMainLooper()).postDelayed({
+                                    view.loadUrl(JS_TOKEN)
+                                }, 500)
                                 return true
                             }
                             return false
@@ -251,12 +258,20 @@ fun WebViewLoginScreen(
                         override fun onPageFinished(view: WebView, url: String) {
                             super.onPageFinished(view, url)
                             if (url.contains("/app") || url.endsWith("/channels/@me")) {
-                                Handler(Looper.getMainLooper()).postDelayed({ view.loadUrl(JS_TOKEN) }, 800)
+                                Handler(Looper.getMainLooper()).postDelayed({
+                                    view.loadUrl(JS_TOKEN)
+                                }, 800)
                             }
                         }
                     }
+
                     wv.webChromeClient = object : WebChromeClient() {
-                        override fun onJsAlert(view: WebView, url: String, message: String, result: JsResult): Boolean {
+                        override fun onJsAlert(
+                            view: WebView,
+                            url: String,
+                            message: String,
+                            result: JsResult
+                        ): Boolean {
                             result.confirm()
                             view.visibility = View.GONE
                             if (message.isNotBlank() && message != "undefined") {
@@ -267,6 +282,10 @@ fun WebViewLoginScreen(
                             return true
                         }
                     }
+
+                    CookieManager.getInstance().setAcceptCookie(true)
+                    CookieManager.getInstance().setAcceptThirdPartyCookies(wv, true)
+
                     wv.loadUrl("https://discord.com/login")
                 }
             },
@@ -298,7 +317,10 @@ fun WebViewLoginScreen(
             webRef.value?.apply {
                 stopLoading()
                 loadUrl("about:blank")
-                Handler(Looper.getMainLooper()).postDelayed({ clearHistory(); destroy() }, 500)
+                Handler(Looper.getMainLooper()).postDelayed({
+                    clearHistory()
+                    destroy()
+                }, 500)
             }
             webRef.value = null
         }
