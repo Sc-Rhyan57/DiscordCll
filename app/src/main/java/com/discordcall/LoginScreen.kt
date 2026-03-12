@@ -29,6 +29,9 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.*
 import androidx.compose.ui.viewinterop.AndroidView
 import androidx.compose.ui.window.*
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.launch
 
 private const val JS_TOKEN = "javascript:(function()%7Bvar%20i%3Ddocument.createElement('iframe')%3Bdocument.body.appendChild(i)%3Balert(i.contentWindow.localStorage.token.slice(1,-1))%7D)()"
 
@@ -56,7 +59,7 @@ fun LoginScreen(
             onTokenReceived = { t ->
                 showWebView = false
                 loading     = true
-                kotlinx.coroutines.MainScope().launch {
+                CoroutineScope(Dispatchers.Main).launch {
                     vm.loginWithToken(t)
                     loading = false
                 }
