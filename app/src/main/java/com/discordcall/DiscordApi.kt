@@ -18,7 +18,9 @@ object DiscordApi {
     private const val BASE = "https://discord.com/api/v10"
     private val JSON_TYPE = "application/json; charset=utf-8".toMediaType()
 
-    // ─── helpers ──────────────────────────────────────────────────────────────
+    private const val USER_AGENT =
+        "Mozilla/5.0 (Linux; Android 14; SM-S921U) AppleWebKit/537.36 " +
+        "(KHTML, like Gecko) Chrome/129.0.0.0 Mobile Safari/537.36"
 
     private fun get(token: String, path: String): JSONObject? {
         return try {
@@ -27,7 +29,7 @@ object DiscordApi {
                     .url("$BASE$path")
                     .header("Authorization", token)
                     .header("Content-Type", "application/json")
-                    .header("User-Agent", "DiscordAndroid/1.0 (Android)")
+                    .header("User-Agent", USER_AGENT)
                     .get()
                     .build()
             ).execute()
@@ -51,7 +53,7 @@ object DiscordApi {
                     .url("$BASE$path")
                     .header("Authorization", token)
                     .header("Content-Type", "application/json")
-                    .header("User-Agent", "DiscordAndroid/1.0 (Android)")
+                    .header("User-Agent", USER_AGENT)
                     .get()
                     .build()
             ).execute()
@@ -74,7 +76,7 @@ object DiscordApi {
                 Request.Builder()
                     .url("$BASE$path")
                     .header("Authorization", token)
-                    .header("User-Agent", "DiscordAndroid/1.0 (Android)")
+                    .header("User-Agent", USER_AGENT)
                     .post(body.toString().toRequestBody(JSON_TYPE))
                     .build()
             ).execute()
@@ -97,7 +99,7 @@ object DiscordApi {
                 Request.Builder()
                     .url("$BASE$path")
                     .header("Authorization", token)
-                    .header("User-Agent", "DiscordAndroid/1.0 (Android)")
+                    .header("User-Agent", USER_AGENT)
                     .delete()
                     .build()
             ).execute()
@@ -108,20 +110,16 @@ object DiscordApi {
         }
     }
 
-    // ─── User ─────────────────────────────────────────────────────────────────
-
     suspend fun fetchMe(token: String): DiscordUser {
         val j = get(token, "/users/@me") ?: throw Exception("Failed to fetch user")
         return DiscordUser(
-            id           = j.optString("id",          ""),
-            username     = j.optString("username",    "Unknown"),
-            discriminator = j.optString("discriminator", "0"),
-            avatar       = j.optString("avatar",      null),
-            globalName   = j.optString("global_name", null)
+            id            = j.optString("id",           ""),
+            username      = j.optString("username",     "Unknown"),
+            discriminator = j.optString("discriminator","0"),
+            avatar        = j.optString("avatar",       null),
+            globalName    = j.optString("global_name",  null)
         )
     }
-
-    // ─── Guilds ───────────────────────────────────────────────────────────────
 
     suspend fun fetchGuilds(token: String): List<DiscordGuild> {
         val arr = getArray(token, "/users/@me/guilds") ?: return emptyList()
@@ -141,7 +139,6 @@ object DiscordApi {
 
         val allChannels = (0 until arr.length()).map { arr.getJSONObject(it) }
 
-        // Parse permission overwrites
         fun parseOverwrites(ow: JSONArray?): List<PermissionOverwrite> {
             if (ow == null) return emptyList()
             return (0 until ow.length()).map { ow.getJSONObject(it) }.map { o ->
@@ -154,7 +151,6 @@ object DiscordApi {
             }
         }
 
-        // Parse voice channels (type 2 = voice, type 13 = stage)
         fun toVoiceChannel(c: JSONObject): VoiceChannel = VoiceChannel(
             id                   = c.optString("id",        ""),
             name                 = c.optString("name",      "Unnamed"),
@@ -165,11 +161,9 @@ object DiscordApi {
             permissionOverwrites = parseOverwrites(c.optJSONArray("permission_overwrites"))
         )
 
-        // Separate categories and voice channels
         val categoryMap = mutableMapOf<String, MutableList<VoiceChannel>>()
         val categories  = mutableListOf<Pair<JSONObject, MutableList<VoiceChannel>>>()
 
-        // First pass: build category list
         allChannels.filter { it.optInt("type") == 4 }
             .sortedBy { it.optInt("position") }
             .forEach { cat ->
@@ -178,7 +172,6 @@ object DiscordApi {
                 categories.add(Pair(cat, list))
             }
 
-        // Second pass: assign voice channels to categories
         val uncategorized = mutableListOf<VoiceChannel>()
         allChannels.filter { it.optInt("type") == 2 || it.optInt("type") == 13 }
             .forEach { ch ->
@@ -191,13 +184,11 @@ object DiscordApi {
                 }
             }
 
-        // Sort channels within each category by position
         categoryMap.values.forEach { it.sortBy { ch -> ch.position } }
         uncategorized.sortBy { it.position }
 
         val result = mutableListOf<ChannelCategory>()
 
-        // Add uncategorized channels as a virtual category if any
         if (uncategorized.isNotEmpty()) {
             result.add(ChannelCategory(
                 id       = "uncategorized",
@@ -207,7 +198,6 @@ object DiscordApi {
             ))
         }
 
-        // Add real categories that have voice channels
         categories.forEach { (cat, channels) ->
             if (channels.isNotEmpty()) {
                 result.add(ChannelCategory(
@@ -252,8 +242,6 @@ object DiscordApi {
         return result
     }
 
-    // ─── Guild Members / Roles ────────────────────────────────────────────────
-
     suspend fun fetchGuildMember(token: String, guildId: String, userId: String): GuildMember? {
         val j = get(token, "/guilds/$guildId/members/$userId") ?: return null
         val rolesArr = j.optJSONArray("roles") ?: JSONArray()
@@ -264,12 +252,11 @@ object DiscordApi {
         )
     }
 
-    /** Returns map of roleId -> permissions (Long) + "@everyone" -> perms */
     suspend fun fetchGuildRoles(token: String, guildId: String): Map<String, Long> {
         val arr = getArray(token, "/guilds/$guildId/roles") ?: return emptyMap()
         val result = mutableMapOf<String, Long>()
         for (i in 0 until arr.length()) {
-            val r = arr.getJSONObject(i)
+            val r    = arr.getJSONObject(i)
             val id   = r.optString("id",          "")
             val name = r.optString("name",         "")
             val perms = r.optString("permissions", "0").toLongOrNull() ?: 0L
@@ -278,8 +265,6 @@ object DiscordApi {
         }
         return result
     }
-
-    // ─── Messages ─────────────────────────────────────────────────────────────
 
     suspend fun fetchMessages(token: String, channelId: String, limit: Int = 50): List<Message> {
         val arr = getArray(token, "/channels/$channelId/messages?limit=$limit") ?: return emptyList()
@@ -384,8 +369,6 @@ object DiscordApi {
         return post(token, "/channels/$channelId/messages", body) != null
     }
 
-    // ─── DMs ──────────────────────────────────────────────────────────────────
-
     suspend fun fetchDmChannels(token: String): List<DmChannel> {
         val arr = getArray(token, "/users/@me/channels") ?: return emptyList()
         return (0 until arr.length())
@@ -424,7 +407,7 @@ object DiscordApi {
         val arr = getArray(token, "/users/@me/relationships") ?: return emptyList()
         return (0 until arr.length())
             .map { arr.getJSONObject(it) }
-            .filter { it.optInt("type") == 1 } // 1 = friend
+            .filter { it.optInt("type") == 1 }
             .mapNotNull { r ->
                 val u = r.optJSONObject("user") ?: return@mapNotNull null
                 DmRecipient(
@@ -436,10 +419,7 @@ object DiscordApi {
             }
     }
 
-    // ─── Calls ────────────────────────────────────────────────────────────────
-
     suspend fun startDmCall(token: String, channelId: String): Boolean {
-        // POST /channels/{channel.id}/call (user API)
         val body = JSONObject().put("recipients", JSONArray())
         return post(token, "/channels/$channelId/call", body) != null
     }
