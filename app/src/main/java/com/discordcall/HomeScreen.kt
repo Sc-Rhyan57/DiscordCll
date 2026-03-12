@@ -8,6 +8,7 @@ import androidx.compose.runtime.*
 import androidx.compose.ui.*
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 
 @Composable
@@ -57,8 +58,8 @@ fun HomeScreen(
                 HomeTab.DMS -> DmListScreen(
                     vm            = vm,
                     onDmSelected  = { dm -> vm.selectDmChannel(dm) },
+                    onDmCall      = { dm -> vm.startDmCall(dm) },
                     onFriendCall  = { recipient ->
-                        // Open or create DM then immediately call
                         val existing = vm.dmChannels.find { dm -> dm.recipients.any { it.id == recipient.id } }
                         if (existing != null) {
                             vm.startDmCall(existing)
