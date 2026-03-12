@@ -31,7 +31,6 @@ android {
 
     buildTypes {
         debug {
-            // Só usa a keystore de release se ela existir, senão usa debug padrão
             if (keystoreFile.exists()) {
                 signingConfig = signingConfigs.getByName("release")
             }
@@ -61,6 +60,7 @@ android {
 
 dependencies {
     implementation("androidx.core:core-ktx:1.12.0")
+    implementation("androidx.appcompat:appcompat:1.6.1")
     implementation("androidx.lifecycle:lifecycle-runtime-ktx:2.7.0")
     implementation("androidx.activity:activity-compose:1.8.2")
     implementation("androidx.lifecycle:lifecycle-viewmodel-compose:2.7.0")
