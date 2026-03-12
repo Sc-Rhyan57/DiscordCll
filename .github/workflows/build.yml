@@ -31,7 +31,6 @@ jobs:
           gradle-version: '8.4'
 
       - name: Decode keystore
-        if: inputs.buildType == 'release'
         run: |
           echo "${{ secrets.KEYSTORE_BASE64 }}" | base64 -d > keystore.jks
 
