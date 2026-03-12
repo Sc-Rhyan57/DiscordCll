@@ -36,9 +36,7 @@ import androidx.compose.foundation.lazy.items
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.outlined.ChatBubbleOutline
 import androidx.compose.material.icons.outlined.Send
-import androidx.compose.ui.graphics.Color
 import androidx.compose.foundation.verticalScroll
-
 
 @Composable
 fun AnimatedImage(
@@ -242,9 +240,7 @@ fun ChatPanel(
         } else if (messages.isEmpty()) {
             Box(Modifier.weight(1f).fillMaxWidth(), contentAlignment = Alignment.Center) {
                 Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                    androidx.compose.material.icons.Icons.Outlined.let { icons ->
-                        Icon(icons.ChatBubbleOutline, null, tint = AppColors.TextMuted, modifier = Modifier.size(36.dp))
-                    }
+                    Icon(Icons.Outlined.ChatBubbleOutline, null, tint = AppColors.TextMuted, modifier = Modifier.size(36.dp))
                     Spacer(Modifier.height(8.dp))
                     Text("Sem mensagens ainda", fontSize = 12.sp, color = AppColors.TextMuted)
                 }
@@ -332,7 +328,7 @@ fun ChatPanel(
                     .background(if (messageText.trim().isNotEmpty()) AppColors.Primary else AppColors.SurfaceVar)
             ) {
                 Icon(
-                    androidx.compose.material.icons.Icons.Outlined.Send,
+                    Icons.Outlined.Send,
                     null,
                     tint = if (messageText.trim().isNotEmpty()) Color.White else AppColors.TextMuted,
                     modifier = Modifier.size(18.dp)
