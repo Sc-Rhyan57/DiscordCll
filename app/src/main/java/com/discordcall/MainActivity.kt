@@ -10,7 +10,6 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.shape.CircleShape
-import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.outlined.BugReport
 import androidx.compose.material3.*
@@ -29,24 +28,21 @@ class MainActivity : ComponentActivity() {
     }
 }
 
-/** Navigation state — all in one sealed class to prevent null pointer during animated transitions */
 sealed class Screen {
-    object Login          : Screen()
-    object Home           : Screen()
-    object GuildChannels  : Screen()
-    object ChannelLobby   : Screen()
-    object ActiveCall     : Screen()
-    object DmList         : Screen()
-    object DmCallScreen   : Screen()
+    object Login         : Screen()
+    object Home          : Screen()
+    object GuildChannels : Screen()
+    object ChannelLobby  : Screen()
+    object ActiveCall    : Screen()
+    object DmCallScreen  : Screen()
 }
 
 @Composable
 fun AppRoot(vm: AppViewModel) {
-    var screen        by remember { mutableStateOf<Screen>(Screen.Login) }
-    var footerClicks  by remember { mutableStateOf(0) }
-    var showConsole   by remember { mutableStateOf(false) }
+    var screen       by remember { mutableStateOf<Screen>(Screen.Login) }
+    var footerClicks by remember { mutableStateOf(0) }
+    var showConsole  by remember { mutableStateOf(false) }
 
-    // Derive screen from VM state changes safely
     LaunchedEffect(vm.isLoggedIn) {
         screen = if (vm.isLoggedIn) Screen.Home else Screen.Login
     }
@@ -66,11 +62,9 @@ fun AppRoot(vm: AppViewModel) {
     MaterialTheme(colorScheme = darkColorScheme()) {
         Box(Modifier.fillMaxSize()) {
             AnimatedContent(
-                targetState = screen,
-                transitionSpec = {
-                    fadeIn(tween(220)) togetherWith fadeOut(tween(180))
-                },
-                label = "nav"
+                targetState  = screen,
+                transitionSpec = { fadeIn(tween(220)) togetherWith fadeOut(tween(180)) },
+                label        = "nav"
             ) { target ->
                 when (target) {
                     Screen.Login -> LoginScreen(
@@ -81,44 +75,48 @@ fun AppRoot(vm: AppViewModel) {
                             if (footerClicks >= 5) { showConsole = true; footerClicks = 0 }
                         }
                     )
+
                     Screen.Home -> HomeScreen(
-                        vm            = vm,
-                        footerClicks  = footerClicks,
-                        onFooterClick = {
+                        vm              = vm,
+                        footerClicks    = footerClicks,
+                        onFooterClick   = {
                             footerClicks++
                             if (footerClicks >= 5) { showConsole = true; footerClicks = 0 }
                         },
-                        onGuildSelected = { guild ->
+                        onGuildSelected = { guild: DiscordGuild ->
                             vm.selectGuild(guild)
                             screen = Screen.GuildChannels
                         },
-                        onDmCallStart  = { screen = Screen.DmCallScreen },
-                        onLogout       = {
+                        onDmCallStart   = { screen = Screen.DmCallScreen },
+                        onLogout        = {
                             vm.logout()
                             screen = Screen.Login
                         }
                     )
+
                     Screen.GuildChannels -> {
-                        // Guard against null guild — go back home instead of crashing
                         val guild = vm.selectedGuild
                         if (guild == null) {
-                            screen = Screen.Home
+                            LaunchedEffect(Unit) { screen = Screen.Home }
+                            Box(Modifier.fillMaxSize().background(AppColors.Background))
                         } else {
                             GuildChannelScreen(
                                 vm        = vm,
                                 guild     = guild,
                                 onBack    = { screen = Screen.Home },
-                                onChannel = { ch ->
+                                onChannel = { ch: VoiceChannel ->
                                     vm.selectChannel(ch)
                                     screen = Screen.ChannelLobby
                                 }
                             )
                         }
                     }
+
                     Screen.ChannelLobby -> {
                         val channel = vm.selectedChannel
                         if (channel == null) {
-                            screen = Screen.GuildChannels
+                            LaunchedEffect(Unit) { screen = Screen.GuildChannels }
+                            Box(Modifier.fillMaxSize().background(AppColors.Background))
                         } else {
                             ChannelLobbyScreen(
                                 vm     = vm,
@@ -130,10 +128,12 @@ fun AppRoot(vm: AppViewModel) {
                             )
                         }
                     }
+
                     Screen.ActiveCall -> {
                         val channel = vm.selectedChannel
                         if (channel == null) {
-                            screen = Screen.GuildChannels
+                            LaunchedEffect(Unit) { screen = Screen.GuildChannels }
+                            Box(Modifier.fillMaxSize().background(AppColors.Background))
                         } else {
                             ActiveCallScreen(
                                 vm       = vm,
@@ -144,24 +144,12 @@ fun AppRoot(vm: AppViewModel) {
                             )
                         }
                     }
-                    Screen.DmList -> DmListScreen(
-                        vm           = vm,
-                        onDmSelected = { dm -> vm.selectDmChannel(dm) },
-                        onDmCall     = { dm -> vm.startDmCall(dm); screen = Screen.DmCallScreen },
-                        onFriendCall = { r  ->
-                            val existing = vm.dmChannels.find { dm -> dm.recipients.any { it.id == r.id } }
-                            if (existing != null) {
-                                vm.startDmCall(existing)
-                                screen = Screen.DmCallScreen
-                            } else {
-                                vm.openDmChannel(r)
-                            }
-                        }
-                    )
+
                     Screen.DmCallScreen -> {
                         val dm = vm.activeDmCall
                         if (dm == null) {
-                            screen = Screen.Home
+                            LaunchedEffect(Unit) { screen = Screen.Home }
+                            Box(Modifier.fillMaxSize().background(AppColors.Background))
                         } else {
                             DmCallScreen(
                                 vm       = vm,
@@ -176,7 +164,7 @@ fun AppRoot(vm: AppViewModel) {
                 }
             }
 
-            // Incoming call overlay — shown on top of everything
+            // Incoming call overlay
             val incoming = vm.incomingCall
             if (incoming != null) {
                 IncomingCallOverlay(
@@ -186,7 +174,7 @@ fun AppRoot(vm: AppViewModel) {
                 )
             }
 
-            // Global floating console button — always accessible
+            // Global floating console button
             Box(
                 Modifier
                     .align(Alignment.TopEnd)
@@ -194,17 +182,16 @@ fun AppRoot(vm: AppViewModel) {
             ) {
                 Box(
                     Modifier
-                        .size(38.dp)
+                        .size(36.dp)
                         .clip(CircleShape)
-                        .background(AppColors.SurfaceVar.copy(0.85f))
+                        .background(Color.Black.copy(0.4f))
                         .clickable { showConsole = true },
                     contentAlignment = Alignment.Center
                 ) {
-                    Icon(Icons.Outlined.BugReport, null, tint = AppColors.TextMuted, modifier = Modifier.size(18.dp))
+                    Icon(Icons.Outlined.BugReport, null, tint = AppColors.TextMuted.copy(0.7f), modifier = Modifier.size(17.dp))
                 }
             }
 
-            // Console overlay
             if (showConsole) {
                 ConsoleOverlay(vm = vm, onDismiss = { showConsole = false })
             }
