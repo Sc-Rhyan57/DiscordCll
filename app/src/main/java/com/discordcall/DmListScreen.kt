@@ -81,13 +81,7 @@ fun DmListScreen(
             TabRow(
                 selectedTabIndex = selectedTab,
                 containerColor   = AppColors.Surface,
-                contentColor     = AppColors.Primary,
-                indicator        = { tabs ->
-                    TabRowDefaults.SecondaryIndicator(
-                        Modifier.tabIndicatorOffset(tabs[selectedTab]),
-                        color = AppColors.Primary
-                    )
-                }
+                contentColor     = AppColors.Primary
             ) {
                 Tab(
                     selected      = selectedTab == 0,
@@ -157,7 +151,7 @@ private fun DmConversationsTab(
                 dm          = dm,
                 myUserId    = vm.currentUser?.id ?: "",
                 onClick     = { onDmSelected(dm) },
-                onCallClick = { onFriendCall(dm) }
+                onCallClick = { onCallClick(dm) }
             )
         }
     }
@@ -378,4 +372,3 @@ private fun FriendRow(
         }
     }
 }
-
