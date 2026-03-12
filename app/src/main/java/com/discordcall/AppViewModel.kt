@@ -1,14 +1,10 @@
 package com.discordcall
 
 import android.app.Application
-import androidx.compose.runtime.getValue
-import androidx.compose.runtime.mutableStateListOf
-import androidx.compose.runtime.mutableStateOf
-import androidx.compose.runtime.setValue
+import androidx.compose.runtime.*
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
-import kotlinx.coroutines.delay
-import kotlinx.coroutines.launch
+import kotlinx.coroutines.*
 
 class AppViewModel(app: Application) : AndroidViewModel(app) {
 
@@ -18,6 +14,8 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
     var currentUser     by mutableStateOf<DiscordUser?>(null)
     var token           by mutableStateOf("")
     var isLoggedIn      by mutableStateOf(false)
+    var loadingUser     by mutableStateOf(false)
+    var loginError      by mutableStateOf<String?>(null)
 
     var guilds          by mutableStateOf<List<DiscordGuild>>(emptyList())
     var loadingGuilds   by mutableStateOf(false)
@@ -35,31 +33,21 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
     var isCameraOn         by mutableStateOf(false)
     var isScreenSharing    by mutableStateOf(false)
     var videoQuality       by mutableStateOf(VideoQuality.AUTO)
-
     var callSettings       by mutableStateOf(CallSettings())
+    var overlayEnabled     by mutableStateOf(false)
+    var currentSpeakerId   by mutableStateOf<String?>(null)
+    var showChat           by mutableStateOf(false)
 
     val messages           = mutableStateListOf<Message>()
     var loadingMessages    by mutableStateOf(false)
-    var showChat           by mutableStateOf(false)
 
     var userPermissions    by mutableStateOf(0L)
     var memberRoles        by mutableStateOf<List<String>>(emptyList())
-
-    var loadingUser        by mutableStateOf(false)
-    var loginError         by mutableStateOf<String?>(null)
-
-    var overlayEnabled     by mutableStateOf(false)
-    var currentSpeakerId   by mutableStateOf<String?>(null)
-
-    var voiceSessionId     = ""
-    var voiceToken_        = ""
-    var voiceEndpoint      = ""
 
     var dmChannels         by mutableStateOf<List<DmChannel>>(emptyList())
     var loadingDms         by mutableStateOf(false)
     var friends            by mutableStateOf<List<DmRecipient>>(emptyList())
     var loadingFriends     by mutableStateOf(false)
-
     var selectedDmChannel  by mutableStateOf<DmChannel?>(null)
     var activeDmCall       by mutableStateOf<DmChannel?>(null)
     var dmCallState        by mutableStateOf(DmCallState.IDLE)
@@ -68,12 +56,23 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
 
     var homeTab            by mutableStateOf(HomeTab.SERVERS)
 
+    // Favorites
+    var favoriteGuildIds   by mutableStateOf<Set<String>>(emptySet())
+
+    // Voice session ids captured from gateway
+    var voiceSessionId  = ""
+    var voiceToken_     = ""
+    var voiceEndpoint   = ""
+
     private val prefs get() = getApplication<Application>().getSharedPreferences("app_prefs", 0)
 
-    // Public helper so Composables can access Application context
     fun getApp(): Application = getApplication()
 
     init {
+        // Load favorites from prefs
+        val savedFavs = prefs.getStringSet("fav_guilds", emptySet()) ?: emptySet()
+        favoriteGuildIds = savedFavs
+
         val saved = prefs.getString("token", null)
         if (!saved.isNullOrEmpty()) {
             token = saved
@@ -82,24 +81,38 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
         setupGateway()
     }
 
-    private fun setupGateway() {
-        gateway.onReady = { userId ->
-            Logger.s("ViewModel", "Gateway ready userId=$userId")
+    fun toggleFavoriteGuild(guildId: String) {
+        favoriteGuildIds = if (guildId in favoriteGuildIds) {
+            favoriteGuildIds - guildId
+        } else {
+            favoriteGuildIds + guildId
         }
+        prefs.edit().putStringSet("fav_guilds", favoriteGuildIds).apply()
+    }
+
+    private fun setupGateway() {
+        gateway.onReady = { userId -> Logger.s("ViewModel", "Gateway ready userId=$userId") }
+
         gateway.onVoiceStateUpdate = { vs ->
             viewModelScope.launch {
+                // Capture our own session ID
+                if (vs.userId == currentUser?.id && vs.sessionId.isNotEmpty()) {
+                    voiceSessionId = vs.sessionId
+                    Logger.s("ViewModel", "Got voice session_id=$voiceSessionId")
+                }
                 val existing = voiceStates.indexOfFirst { it.userId == vs.userId }
                 if (vs.channelId.isEmpty()) {
                     if (existing >= 0) voiceStates.removeAt(existing)
                 } else {
-                    if (existing >= 0) voiceStates[existing] = vs
-                    else voiceStates.add(vs)
+                    if (existing >= 0) voiceStates[existing] = vs else voiceStates.add(vs)
                 }
             }
         }
+
         gateway.onVoiceServerUpdate = { vToken, gId, ep ->
             voiceToken_   = vToken
             voiceEndpoint = ep
+            Logger.s("ViewModel", "VoiceServerUpdate endpoint=$ep session=$voiceSessionId")
             viewModelScope.launch {
                 voiceEngine.connect(
                     vToken       = vToken,
@@ -111,6 +124,7 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
                 )
             }
         }
+
         gateway.onDmVoiceServerUpdate = { vToken, chanId, ep ->
             voiceToken_   = vToken
             voiceEndpoint = ep
@@ -125,6 +139,7 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
                 )
             }
         }
+
         gateway.onMessageCreate = { channelId, msg ->
             viewModelScope.launch {
                 val isForServerChannel = selectedChannel?.id == channelId
@@ -135,9 +150,10 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
                 }
             }
         }
+
         gateway.onSpeakingUpdate = { userId, speaking ->
             viewModelScope.launch {
-                val idx = voiceStates.indexOfFirst { it.userId == userId }
+                val idx   = voiceStates.indexOfFirst { it.userId == userId }
                 if (idx >= 0) voiceStates[idx] = voiceStates[idx].copy(speaking = speaking)
                 val dmIdx = dmVoiceStates.indexOfFirst { it.userId == userId }
                 if (dmIdx >= 0) dmVoiceStates[dmIdx] = dmVoiceStates[dmIdx].copy(speaking = speaking)
@@ -145,6 +161,7 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
                 else if (currentSpeakerId == userId) currentSpeakerId = null
             }
         }
+
         gateway.onGuildVoiceStates = { _, states ->
             viewModelScope.launch {
                 states.forEach { vs ->
@@ -153,7 +170,8 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
                 }
             }
         }
-        gateway.onDmVoiceStateUpdate = { channelId, vs ->
+
+        gateway.onDmVoiceStateUpdate = { _, vs ->
             viewModelScope.launch {
                 val idx = dmVoiceStates.indexOfFirst { it.userId == vs.userId }
                 if (vs.channelId.isEmpty()) {
@@ -163,27 +181,23 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
                 }
             }
         }
+
         gateway.onCallCreate = { call ->
             viewModelScope.launch {
                 val myId = currentUser?.id ?: return@launch
                 if (call.callerId != myId) {
-                    val enriched = enrichIncomingCall(call)
-                    incomingCall = enriched
-                    Logger.i("ViewModel", "Incoming call from ${enriched.callerName}")
+                    incomingCall = enrichIncomingCall(call)
                 }
             }
         }
+
         gateway.onCallDelete = { channelId ->
             viewModelScope.launch {
-                if (incomingCall?.channelId == channelId) {
-                    incomingCall = null
-                    Logger.i("ViewModel", "Incoming call cancelled $channelId")
-                }
-                if (activeDmCall?.id == channelId) {
-                    leaveDmCall()
-                }
+                if (incomingCall?.channelId == channelId) incomingCall = null
+                if (activeDmCall?.id == channelId) leaveDmCall()
             }
         }
+
         voiceEngine.onConnected = {
             viewModelScope.launch {
                 isInCall = true
@@ -191,12 +205,14 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
                 Logger.s("ViewModel", "Voice connected!")
             }
         }
+
         voiceEngine.onDisconnected = {
             viewModelScope.launch {
                 isInCall = false
                 isMuted  = false
             }
         }
+
         voiceEngine.onSpeakingChange = { userId, speaking ->
             viewModelScope.launch {
                 val idx = voiceStates.indexOfFirst { it.userId == userId }
@@ -225,8 +241,8 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
     }
 
     suspend fun loginWithToken(t: String): Boolean {
-        loadingUser  = true
-        loginError   = null
+        loadingUser = true
+        loginError  = null
         return try {
             val user = DiscordApi.fetchMe(t)
             currentUser = user
@@ -252,23 +268,27 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
     fun logout() {
         gateway.disconnect()
         voiceEngine.release()
-        token          = ""
-        isLoggedIn     = false
-        currentUser    = null
-        guilds         = emptyList()
-        dmChannels     = emptyList()
-        friends        = emptyList()
-        selectedGuild  = null
-        selectedChannel= null
-        activeDmCall   = null
+        prefs.edit().remove("token").apply()
+
+        token             = ""
+        isLoggedIn        = false
+        currentUser       = null
+        guilds            = emptyList()
+        dmChannels        = emptyList()
+        friends           = emptyList()
+        selectedGuild     = null
+        selectedChannel   = null
+        activeDmCall      = null
         selectedDmChannel = null
-        dmCallState    = DmCallState.IDLE
-        incomingCall   = null
-        isInCall       = false
+        dmCallState       = DmCallState.IDLE
+        incomingCall      = null
+        isInCall          = false
+        voiceSessionId    = ""
+        voiceToken_       = ""
+        voiceEndpoint     = ""
         messages.clear()
         voiceStates.clear()
         dmVoiceStates.clear()
-        prefs.edit().remove("token").apply()
         Logger.i("ViewModel", "Logged out")
     }
 
@@ -277,7 +297,6 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
             loadingGuilds = true
             try {
                 guilds = DiscordApi.fetchGuilds(token).sortedBy { it.name }
-                Logger.s("ViewModel", "Loaded ${guilds.size} guilds")
             } catch (e: Exception) {
                 Logger.e("ViewModel", "loadGuilds: ${e.message}")
             } finally {
@@ -289,28 +308,18 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
     fun loadDmChannels() {
         viewModelScope.launch {
             loadingDms = true
-            try {
-                dmChannels = DiscordApi.fetchDmChannels(token)
-                Logger.s("ViewModel", "Loaded ${dmChannels.size} DM channels")
-            } catch (e: Exception) {
-                Logger.e("ViewModel", "loadDmChannels: ${e.message}")
-            } finally {
-                loadingDms = false
-            }
+            try { dmChannels = DiscordApi.fetchDmChannels(token) }
+            catch (e: Exception) { Logger.e("ViewModel", "loadDmChannels: ${e.message}") }
+            finally { loadingDms = false }
         }
     }
 
     fun loadFriends() {
         viewModelScope.launch {
             loadingFriends = true
-            try {
-                friends = DiscordApi.fetchFriends(token)
-                Logger.s("ViewModel", "Loaded ${friends.size} friends")
-            } catch (e: Exception) {
-                Logger.e("ViewModel", "loadFriends: ${e.message}")
-            } finally {
-                loadingFriends = false
-            }
+            try { friends = DiscordApi.fetchFriends(token) }
+            catch (e: Exception) { Logger.e("ViewModel", "loadFriends: ${e.message}") }
+            finally { loadingFriends = false }
         }
     }
 
@@ -336,7 +345,6 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
                     }
                 }
                 loadUserPermissions(guild)
-                Logger.s("ViewModel", "Loaded ${categories.sumOf { it.channels.size }} voice channels")
             } catch (e: Exception) {
                 Logger.e("ViewModel", "loadChannels: ${e.message}")
             } finally {
@@ -391,13 +399,9 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
     fun joinVoiceChannel(channel: VoiceChannel) {
         val guild = selectedGuild ?: return
         selectedChannel = channel
+        voiceSessionId  = ""  // reset, will be populated by VOICE_STATE_UPDATE
         gateway.sendVoiceStateUpdate(guild.id, channel.id, isMuted, isDeafened)
-        viewModelScope.launch {
-            var waited = 0
-            while (voiceSessionId.isEmpty() && waited < 5000) { delay(100); waited += 100 }
-            if (voiceSessionId.isEmpty()) Logger.e("ViewModel", "Timed out waiting for voice session")
-        }
-        Logger.i("ViewModel", "Joining voice channel: ${channel.name}")
+        Logger.i("ViewModel", "Joining voice: ${channel.name}")
     }
 
     fun leaveVoiceChannel() {
@@ -410,10 +414,7 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
         isCameraOn      = false
         isScreenSharing = false
         voiceSessionId  = ""
-        voiceToken_     = ""
-        voiceEndpoint   = ""
         CallService.stop(getApplication())
-        Logger.i("ViewModel", "Left voice channel")
     }
 
     fun openDmChannel(recipient: DmRecipient) {
@@ -421,9 +422,7 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
             val dm = DiscordApi.openDmChannel(token, recipient.id)
             if (dm != null) {
                 selectedDmChannel = dm
-                if (!dmChannels.any { it.id == dm.id }) {
-                    dmChannels = listOf(dm) + dmChannels
-                }
+                if (!dmChannels.any { it.id == dm.id }) dmChannels = listOf(dm) + dmChannels
                 messages.clear()
                 loadMessages(dm.id)
             }
@@ -438,23 +437,20 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
 
     fun startDmCall(dm: DmChannel) {
         viewModelScope.launch {
-            dmCallState   = DmCallState.RINGING_OUT
-            activeDmCall  = dm
+            dmCallState  = DmCallState.RINGING_OUT
+            activeDmCall = dm
             dmVoiceStates.clear()
-            val myUser = currentUser
-            if (myUser != null) {
+            voiceSessionId = ""
+            currentUser?.let { u ->
                 dmVoiceStates.add(VoiceState(
-                    userId     = myUser.id,
-                    username   = myUser.displayName,
-                    avatar     = myUser.avatar,
+                    userId     = u.id,
+                    username   = u.displayName,
+                    avatar     = u.avatar,
                     channelId  = dm.id,
                     selfMute   = isMuted,
                     selfDeaf   = isDeafened,
-                    selfVideo  = false,
-                    selfStream = false,
-                    serverMute = false,
-                    serverDeaf = false,
-                    suppress   = false
+                    selfVideo  = false, selfStream = false,
+                    serverMute = false, serverDeaf = false, suppress = false
                 ))
             }
             val ok = DiscordApi.startDmCall(token, dm.id)
@@ -462,55 +458,34 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
                 dmCallState  = DmCallState.IDLE
                 activeDmCall = null
                 dmVoiceStates.clear()
-                Logger.e("ViewModel", "Failed to start DM call")
                 return@launch
             }
             gateway.sendDmVoiceStateUpdate(dm.id, isMuted, isDeafened)
-            Logger.i("ViewModel", "DM call started to ${dm.displayName}")
-            var waited = 0
-            while (voiceSessionId.isEmpty() && waited < 8000) { delay(100); waited += 100 }
-            if (voiceSessionId.isEmpty()) {
-                Logger.e("ViewModel", "Timed out waiting for DM voice session")
-            }
         }
     }
 
     fun answerIncomingCall() {
         val call = incomingCall ?: return
-        val dm   = dmChannels.find { it.id == call.channelId } ?: run {
-            DmChannel(
-                id         = call.channelId,
-                type       = 1,
-                recipients = listOf(DmRecipient(call.callerId, call.callerName, null, call.callerAvatar)),
-                name       = null,
-                icon       = null,
-                lastMessageId = null
-            )
-        }
-        incomingCall  = null
-        activeDmCall  = dm
-        dmCallState   = DmCallState.ACTIVE
+        val dm   = dmChannels.find { it.id == call.channelId } ?: DmChannel(
+            id = call.channelId, type = 1,
+            recipients = listOf(DmRecipient(call.callerId, call.callerName, null, call.callerAvatar)),
+            name = null, icon = null, lastMessageId = null
+        )
+        incomingCall = null
+        activeDmCall = dm
+        dmCallState  = DmCallState.ACTIVE
         dmVoiceStates.clear()
         gateway.sendDmVoiceStateUpdate(call.channelId, isMuted, isDeafened)
-        viewModelScope.launch {
-            var waited = 0
-            while (voiceSessionId.isEmpty() && waited < 8000) { delay(100); waited += 100 }
-            if (voiceSessionId.isEmpty()) Logger.e("ViewModel", "Timed out waiting for DM voice session after answer")
-        }
-        Logger.i("ViewModel", "Answered call from ${call.callerName}")
     }
 
     fun declineIncomingCall() {
         val call = incomingCall ?: return
         incomingCall = null
-        viewModelScope.launch {
-            DiscordApi.declineCall(token, call.channelId)
-            Logger.i("ViewModel", "Declined call from ${call.callerName}")
-        }
+        viewModelScope.launch { DiscordApi.declineCall(token, call.channelId) }
     }
 
     fun leaveDmCall() {
-        val dm = activeDmCall ?: return
+        activeDmCall ?: return
         gateway.sendDmVoiceStateUpdate(null, false, false)
         voiceEngine.disconnect()
         activeDmCall    = null
@@ -520,10 +495,7 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
         isDeafened      = false
         dmVoiceStates.clear()
         voiceSessionId  = ""
-        voiceToken_     = ""
-        voiceEndpoint   = ""
         CallService.stop(getApplication())
-        Logger.i("ViewModel", "Left DM call with ${dm.displayName}")
     }
 
     fun toggleMute() {
@@ -531,8 +503,8 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
         voiceEngine.setMuted(isMuted)
         val guild = selectedGuild
         if (guild != null) {
-            val channel = selectedChannel ?: return
-            gateway.sendVoiceStateUpdate(guild.id, channel.id, isMuted, isDeafened)
+            val ch = selectedChannel ?: return
+            gateway.sendVoiceStateUpdate(guild.id, ch.id, isMuted, isDeafened)
         } else {
             val dm = activeDmCall ?: return
             gateway.sendDmVoiceStateUpdate(dm.id, isMuted, isDeafened)
@@ -544,8 +516,8 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
         voiceEngine.setDeafened(isDeafened)
         val guild = selectedGuild
         if (guild != null) {
-            val channel = selectedChannel ?: return
-            gateway.sendVoiceStateUpdate(guild.id, channel.id, isMuted, isDeafened)
+            val ch = selectedChannel ?: return
+            gateway.sendVoiceStateUpdate(guild.id, ch.id, isMuted, isDeafened)
         } else {
             val dm = activeDmCall ?: return
             gateway.sendDmVoiceStateUpdate(dm.id, isMuted, isDeafened)
@@ -559,7 +531,6 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
                 val fetched = DiscordApi.fetchMessages(token, channelId)
                 messages.clear()
                 messages.addAll(fetched)
-                Logger.s("ViewModel", "Loaded ${fetched.size} messages for $channelId")
             } catch (e: Exception) {
                 Logger.e("ViewModel", "loadMessages: ${e.message}")
             } finally {
@@ -570,10 +541,7 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
 
     fun sendMessage(content: String) {
         val channelId = selectedDmChannel?.id ?: selectedChannel?.id ?: activeDmCall?.id ?: return
-        viewModelScope.launch {
-            val ok = DiscordApi.sendMessage(token, channelId, content)
-            if (!ok) Logger.e("ViewModel", "Failed to send message")
-        }
+        viewModelScope.launch { DiscordApi.sendMessage(token, channelId, content) }
     }
 
     override fun onCleared() {
