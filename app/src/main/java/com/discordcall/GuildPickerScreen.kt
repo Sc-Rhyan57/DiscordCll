@@ -7,7 +7,6 @@ import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.*
 import androidx.compose.foundation.shape.*
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.automirrored.outlined.ArrowBack
 import androidx.compose.material.icons.outlined.*
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
@@ -20,201 +19,70 @@ import androidx.compose.ui.unit.*
 
 @Composable
 fun GuildPickerScreen(
-    vm: AppViewModel,
+    vm:              AppViewModel,
     onGuildSelected: (DiscordGuild) -> Unit,
-    footerClicks: Int = 0,
-    onFooterClick: () -> Unit = {}
+    footerClicks:    Int,
+    onFooterClick:   () -> Unit,
+    onLogout:        () -> Unit
 ) {
     var searchQuery by remember { mutableStateOf("") }
-    val filtered = remember(vm.guilds, searchQuery) {
-        if (searchQuery.isEmpty()) vm.guilds
-        else vm.guilds.filter { it.name.contains(searchQuery, ignoreCase = true) }
+    var showLogoutDialog by remember { mutableStateOf(false) }
+
+    val favorites  = vm.favoriteGuildIds
+    val allGuilds  = vm.guilds
+
+    val sortedGuilds = remember(allGuilds, favorites, searchQuery) {
+        val q = searchQuery.trim().lowercase()
+        val filtered = if (q.isEmpty()) allGuilds
+                       else allGuilds.filter { it.name.lowercase().contains(q) }
+        filtered.sortedWith(compareByDescending { it.id in favorites })
     }
 
-    Column(
-        Modifier
-            .fillMaxSize()
-            .background(AppColors.Background)
-    ) {
-        Box(
-            Modifier
-                .fillMaxWidth()
-                .background(AppColors.Surface)
+    Column(Modifier.fillMaxSize().background(AppColors.Background)) {
+        // Header
+        Column(
+            Modifier.fillMaxWidth().background(AppColors.Surface)
                 .padding(horizontal = 16.dp, vertical = 14.dp)
         ) {
-            Column {
-                Row(
-                    Modifier.fillMaxWidth(),
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
-                    Box(
-                        Modifier
-                            .size(36.dp)
-                            .clip(CircleShape)
-                            .background(AppColors.Primary.copy(0.2f)),
-                        contentAlignment = Alignment.Center
-                    ) {
-                        Icon(Icons.Outlined.Call, null, tint = AppColors.Primary, modifier = Modifier.size(18.dp))
-                    }
-                    Spacer(Modifier.width(12.dp))
-                    Column(Modifier.weight(1f)) {
-                        Text("Discord Call", fontSize = 18.sp, fontWeight = FontWeight.Black, color = AppColors.TextPrimary)
-                        Text("Selecione um servidor", fontSize = 12.sp, color = AppColors.TextMuted)
-                    }
+            Row(
+                Modifier.fillMaxWidth(),
+                verticalAlignment     = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.SpaceBetween
+            ) {
+                Row(verticalAlignment = Alignment.CenterVertically) {
                     val user = vm.currentUser
                     if (user != null) {
                         AnimatedImage(
-                            url = user.avatarUrl(64),
+                            url = user.avatarUrl(40),
                             contentDescription = null,
                             modifier = Modifier.size(36.dp).clip(CircleShape)
                         )
+                        Spacer(Modifier.width(10.dp))
+                        Column {
+                            Text(user.displayName, fontSize = 15.sp, fontWeight = FontWeight.Bold, color = AppColors.TextPrimary)
+                            Text("@${user.username}", fontSize = 11.sp, color = AppColors.TextMuted)
+                        }
+                    } else {
+                        Text("Servidores", fontSize = 18.sp, fontWeight = FontWeight.Black, color = AppColors.TextPrimary)
                     }
                 }
-                Spacer(Modifier.height(12.dp))
-                OutlinedTextField(
-                    value         = searchQuery,
-                    onValueChange = { searchQuery = it },
-                    modifier      = Modifier.fillMaxWidth(),
-                    placeholder   = { Text("Buscar servidor...", color = AppColors.TextMuted) },
-                    leadingIcon   = { Icon(Icons.Outlined.Search, null, tint = AppColors.TextMuted) },
-                    colors        = OutlinedTextFieldDefaults.colors(
-                        focusedBorderColor   = AppColors.Primary,
-                        unfocusedBorderColor = AppColors.Divider,
-                        focusedTextColor     = AppColors.TextPrimary,
-                        unfocusedTextColor   = AppColors.TextPrimary,
-                        cursorColor          = AppColors.Primary
-                    ),
-                    shape  = RoundedCornerShape(12.dp),
-                    singleLine = true
-                )
-            }
-        }
-
-        if (vm.loadingGuilds) {
-            Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-                Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                    CircularProgressIndicator(color = AppColors.Primary)
-                    Spacer(Modifier.height(16.dp))
-                    Text("Carregando servidores...", color = AppColors.TextMuted)
-                }
-            }
-        } else if (filtered.isEmpty()) {
-            Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-                Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                    Icon(Icons.Outlined.Groups, null, tint = AppColors.TextMuted, modifier = Modifier.size(48.dp))
-                    Spacer(Modifier.height(12.dp))
-                    Text("Nenhum servidor encontrado", color = AppColors.TextMuted)
-                }
-            }
-        } else {
-            LazyColumn(
-                Modifier.fillMaxSize(),
-                contentPadding    = PaddingValues(vertical = 8.dp)
-            ) {
-                items(filtered) { guild ->
-                    GuildRow(guild = guild, onClick = { onGuildSelected(guild) })
-                }
-            }
-        }
-    }
-}
-
-@Composable
-private fun GuildRow(guild: DiscordGuild, onClick: () -> Unit) {
-    Row(
-        Modifier
-            .fillMaxWidth()
-            .clickable { onClick() }
-            .padding(horizontal = 16.dp, vertical = 10.dp),
-        verticalAlignment = Alignment.CenterVertically
-    ) {
-        val iconUrl = guild.iconUrl(128)
-        if (iconUrl != null) {
-            AnimatedImage(
-                url = iconUrl,
-                contentDescription = null,
-                modifier = Modifier.size(50.dp).clip(RoundedCornerShape(16.dp))
-            )
-        } else {
-            Box(
-                Modifier
-                    .size(50.dp)
-                    .clip(RoundedCornerShape(16.dp))
-                    .background(AppColors.Primary.copy(0.2f)),
-                contentAlignment = Alignment.Center
-            ) {
-                Text(
-                    guild.name.take(2).uppercase(),
-                    fontSize   = 16.sp,
-                    fontWeight = FontWeight.Black,
-                    color      = AppColors.Primary
-                )
-            }
-        }
-        Spacer(Modifier.width(14.dp))
-        Text(
-            guild.name,
-            fontSize   = 15.sp,
-            fontWeight = FontWeight.SemiBold,
-            color      = AppColors.TextPrimary,
-            maxLines   = 1,
-            overflow   = TextOverflow.Ellipsis,
-            modifier   = Modifier.weight(1f)
-        )
-        Icon(Icons.Outlined.ChevronRight, null, tint = AppColors.TextMuted, modifier = Modifier.size(20.dp))
-    }
-}
-
-@Composable
-fun ChannelPickerScreen(
-    vm: AppViewModel,
-    onBack: () -> Unit,
-    onChannelSelected: (VoiceChannel) -> Unit
-) {
-    val guild = vm.selectedGuild ?: return
-    var searchQuery by remember { mutableStateOf("") }
-
-    Column(Modifier.fillMaxSize().background(AppColors.Background)) {
-        Box(
-            Modifier
-                .fillMaxWidth()
-                .background(AppColors.Surface)
-                .padding(horizontal = 16.dp, vertical = 14.dp)
-        ) {
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                IconButton(onClick = onBack) {
-                    Icon(Icons.AutoMirrored.Outlined.ArrowBack, null, tint = AppColors.TextPrimary)
-                }
-                val iconUrl = guild.iconUrl(64)
-                if (iconUrl != null) {
-                    AnimatedImage(iconUrl, null, Modifier.size(36.dp).clip(RoundedCornerShape(10.dp)))
-                } else {
-                    Box(
-                        Modifier.size(36.dp).clip(RoundedCornerShape(10.dp)).background(AppColors.Primary.copy(0.2f)),
-                        contentAlignment = Alignment.Center
-                    ) {
-                        Text(guild.name.take(1), fontSize = 14.sp, fontWeight = FontWeight.Black, color = AppColors.Primary)
+                Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+                    IconButton(onClick = { vm.loadGuilds() }) {
+                        Icon(Icons.Outlined.Refresh, null, tint = AppColors.TextMuted, modifier = Modifier.size(20.dp))
+                    }
+                    IconButton(onClick = { showLogoutDialog = true }) {
+                        Icon(Icons.Outlined.Logout, null, tint = AppColors.TextMuted, modifier = Modifier.size(20.dp))
                     }
                 }
-                Spacer(Modifier.width(10.dp))
-                Column(Modifier.weight(1f)) {
-                    Text(guild.name, fontSize = 16.sp, fontWeight = FontWeight.Bold, color = AppColors.TextPrimary, maxLines = 1, overflow = TextOverflow.Ellipsis)
-                    Text("Canais de voz", fontSize = 11.sp, color = AppColors.TextMuted)
-                }
             }
-        }
 
-        Box(
-            Modifier
-                .fillMaxWidth()
-                .background(AppColors.Surface)
-                .padding(horizontal = 16.dp, vertical = 8.dp)
-        ) {
+            Spacer(Modifier.height(10.dp))
+
             OutlinedTextField(
                 value         = searchQuery,
                 onValueChange = { searchQuery = it },
                 modifier      = Modifier.fillMaxWidth(),
-                placeholder   = { Text("Buscar canal...", color = AppColors.TextMuted) },
+                placeholder   = { Text("Buscar servidor...", color = AppColors.TextMuted) },
                 leadingIcon   = { Icon(Icons.Outlined.Search, null, tint = AppColors.TextMuted) },
                 colors        = OutlinedTextFieldDefaults.colors(
                     focusedBorderColor   = AppColors.Primary,
@@ -228,133 +96,170 @@ fun ChannelPickerScreen(
             )
         }
 
-        if (vm.loadingChannels) {
-            Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+        if (vm.loadingGuilds) {
+            Box(Modifier.weight(1f).fillMaxWidth(), contentAlignment = Alignment.Center) {
                 Column(horizontalAlignment = Alignment.CenterHorizontally) {
                     CircularProgressIndicator(color = AppColors.Primary)
                     Spacer(Modifier.height(12.dp))
-                    Text("Carregando canais...", color = AppColors.TextMuted)
+                    Text("Carregando servidores...", color = AppColors.TextMuted)
                 }
             }
-            return
-        }
-
-        LazyColumn(Modifier.fillMaxSize(), contentPadding = PaddingValues(bottom = 16.dp)) {
-            vm.categories.forEach { cat ->
-                val filteredChannels = if (searchQuery.isEmpty()) cat.channels
-                else cat.channels.filter { it.name.contains(searchQuery, ignoreCase = true) }
-                if (filteredChannels.isEmpty()) return@forEach
-
-                item {
-                    Row(
-                        Modifier
-                            .fillMaxWidth()
-                            .padding(horizontal = 16.dp, vertical = 10.dp),
-                        verticalAlignment = Alignment.CenterVertically
-                    ) {
-                        Icon(Icons.Outlined.ExpandMore, null, tint = AppColors.TextMuted, modifier = Modifier.size(14.dp))
-                        Spacer(Modifier.width(6.dp))
+        } else {
+            LazyColumn(
+                Modifier.weight(1f),
+                contentPadding = PaddingValues(vertical = 8.dp)
+            ) {
+                // Favorites section header
+                if (favorites.isNotEmpty() && searchQuery.isEmpty()) {
+                    item {
                         Text(
-                            cat.name.uppercase(),
-                            fontSize     = 11.sp,
-                            fontWeight   = FontWeight.Bold,
-                            color        = AppColors.TextMuted,
-                            letterSpacing = 0.8.sp
+                            "FAVORITOS",
+                            fontSize      = 11.sp,
+                            fontWeight    = FontWeight.Bold,
+                            color         = AppColors.Warning,
+                            letterSpacing = 0.8.sp,
+                            modifier      = Modifier.padding(horizontal = 16.dp, vertical = 6.dp)
                         )
                     }
                 }
 
-                items(filteredChannels) { channel ->
-                    val channelVoiceStates = vm.voiceStates.filter { it.channelId == channel.id }
-                    val channelPerms       = vm.computeChannelPermissions(channel)
-                    val canView            = DiscordPermissions.has(channelPerms, DiscordPermissions.VIEW_CHANNEL)
-                    val canConnect         = DiscordPermissions.has(channelPerms, DiscordPermissions.CONNECT)
+                items(sortedGuilds, key = { it.id }) { guild ->
+                    val isFav = guild.id in favorites
 
-                    ChannelRow(
-                        channel    = channel,
-                        voiceStates= channelVoiceStates,
-                        canView    = canView,
-                        canConnect = canConnect,
-                        onClick    = { onChannelSelected(channel) }
+                    // Show "TODOS OS SERVIDORES" header after favorites
+                    if (favorites.isNotEmpty() && searchQuery.isEmpty() && !isFav
+                        && sortedGuilds.indexOf(guild) == favorites.size) {
+                        Text(
+                            "TODOS OS SERVIDORES",
+                            fontSize      = 11.sp,
+                            fontWeight    = FontWeight.Bold,
+                            color         = AppColors.TextMuted,
+                            letterSpacing = 0.8.sp,
+                            modifier      = Modifier.padding(horizontal = 16.dp, vertical = 6.dp)
+                        )
+                    }
+
+                    GuildRow(
+                        guild       = guild,
+                        isFavorite  = isFav,
+                        onClick     = { onGuildSelected(guild) },
+                        onToggleFav = { vm.toggleFavoriteGuild(guild.id) }
                     )
+                }
+
+                item {
+                    Spacer(Modifier.height(12.dp))
+                    Footer(clicks = footerClicks, onClick = onFooterClick)
+                    Spacer(Modifier.height(16.dp))
                 }
             }
         }
     }
+
+    // Logout confirmation dialog
+    if (showLogoutDialog) {
+        AlertDialog(
+            onDismissRequest = { showLogoutDialog = false },
+            containerColor   = AppColors.Surface,
+            title            = { Text("Sair?", color = AppColors.TextPrimary) },
+            text             = { Text("Tem certeza que deseja deslogar?", color = AppColors.TextSecondary) },
+            confirmButton    = {
+                TextButton(onClick = {
+                    showLogoutDialog = false
+                    onLogout()
+                }) {
+                    Text("Sair", color = AppColors.Error, fontWeight = FontWeight.Bold)
+                }
+            },
+            dismissButton    = {
+                TextButton(onClick = { showLogoutDialog = false }) {
+                    Text("Cancelar", color = AppColors.TextMuted)
+                }
+            }
+        )
+    }
 }
 
 @Composable
-private fun ChannelRow(
-    channel: VoiceChannel,
-    voiceStates: List<VoiceState>,
-    canView: Boolean,
-    canConnect: Boolean,
-    onClick: () -> Unit
+private fun GuildRow(
+    guild: DiscordGuild,
+    isFavorite: Boolean,
+    onClick: () -> Unit,
+    onToggleFav: () -> Unit
 ) {
-    val hasUsers = voiceStates.isNotEmpty()
-
-    Column(
+    Row(
         Modifier
             .fillMaxWidth()
-            .then(if (canView) Modifier.clickable { onClick() } else Modifier)
-            .padding(horizontal = 16.dp, vertical = 4.dp)
+            .clickable { onClick() }
+            .background(if (isFavorite) AppColors.Warning.copy(0.05f) else Color.Transparent)
+            .padding(horizontal = 16.dp, vertical = 10.dp),
+        verticalAlignment = Alignment.CenterVertically
     ) {
-        Row(
-            Modifier
-                .fillMaxWidth()
-                .clip(RoundedCornerShape(10.dp))
-                .background(if (hasUsers) AppColors.Surface.copy(0.7f) else Color.Transparent)
-                .padding(horizontal = 12.dp, vertical = 10.dp),
-            verticalAlignment = Alignment.CenterVertically
-        ) {
-            Icon(
-                if (channel.isStageChannel) Icons.Outlined.RecordVoiceOver else Icons.Outlined.VolumeUp,
-                null,
-                tint     = if (!canView) AppColors.TextMuted.copy(0.4f) else if (hasUsers) AppColors.Primary else AppColors.TextMuted,
-                modifier = Modifier.size(18.dp)
-            )
-            Spacer(Modifier.width(10.dp))
-            Column(Modifier.weight(1f)) {
-                Text(
-                    channel.name,
-                    fontSize   = 14.sp,
-                    fontWeight = if (hasUsers) FontWeight.SemiBold else FontWeight.Normal,
-                    color      = if (!canView) AppColors.TextMuted.copy(0.4f) else AppColors.TextPrimary,
-                    maxLines   = 1,
-                    overflow   = TextOverflow.Ellipsis
+        Box(Modifier.size(50.dp)) {
+            val iconUrl = guild.iconUrl(100)
+            if (iconUrl != null) {
+                AnimatedImage(
+                    url = iconUrl,
+                    contentDescription = null,
+                    modifier = Modifier.fillMaxSize().clip(RoundedCornerShape(16.dp))
                 )
-                if (channel.userLimit > 0) {
+            } else {
+                Box(
+                    Modifier.fillMaxSize().clip(RoundedCornerShape(16.dp))
+                        .background(AppColors.Primary.copy(0.2f)),
+                    contentAlignment = Alignment.Center
+                ) {
                     Text(
-                        "${voiceStates.size}/${channel.userLimit}",
-                        fontSize = 11.sp,
-                        color    = AppColors.TextMuted
+                        guild.name.take(2).uppercase(),
+                        fontSize   = 16.sp,
+                        fontWeight = FontWeight.Black,
+                        color      = AppColors.Primary
                     )
                 }
             }
-
-            if (!canConnect && canView) {
-                Icon(Icons.Outlined.Lock, null, tint = AppColors.TextMuted, modifier = Modifier.size(14.dp))
-            }
-
-            if (hasUsers) {
-                Row(horizontalArrangement = Arrangement.spacedBy((-8).dp)) {
-                    voiceStates.take(3).forEach { vs ->
-                        AnimatedImage(
-                            url = vs.avatarUrl(32),
-                            contentDescription = null,
-                            modifier = Modifier.size(24.dp).clip(CircleShape).border(1.5.dp, AppColors.Background, CircleShape)
-                        )
-                    }
-                    if (voiceStates.size > 3) {
-                        Box(
-                            Modifier.size(24.dp).clip(CircleShape).background(AppColors.SurfaceVar).border(1.5.dp, AppColors.Background, CircleShape),
-                            contentAlignment = Alignment.Center
-                        ) {
-                            Text("+${voiceStates.size - 3}", fontSize = 8.sp, color = AppColors.TextMuted)
-                        }
-                    }
+            if (isFavorite) {
+                Box(
+                    Modifier
+                        .size(14.dp)
+                        .align(Alignment.TopEnd)
+                        .clip(CircleShape)
+                        .background(AppColors.Warning),
+                    contentAlignment = Alignment.Center
+                ) {
+                    Icon(Icons.Outlined.Star, null, tint = Color.White, modifier = Modifier.size(9.dp))
                 }
             }
         }
+
+        Spacer(Modifier.width(14.dp))
+
+        Column(Modifier.weight(1f)) {
+            Text(
+                guild.name,
+                fontSize   = 15.sp,
+                fontWeight = if (isFavorite) FontWeight.Bold else FontWeight.SemiBold,
+                color      = if (isFavorite) AppColors.TextPrimary else AppColors.TextSecondary,
+                maxLines   = 1,
+                overflow   = TextOverflow.Ellipsis
+            )
+            val voiceCount = guild.approximateMemberCount
+            if (voiceCount > 0) {
+                Text("$voiceCount membros", fontSize = 11.sp, color = AppColors.TextMuted)
+            }
+        }
+
+        IconButton(
+            onClick  = onToggleFav,
+            modifier = Modifier.size(36.dp)
+        ) {
+            Icon(
+                if (isFavorite) Icons.Outlined.Star else Icons.Outlined.StarBorder,
+                null,
+                tint     = if (isFavorite) AppColors.Warning else AppColors.TextMuted,
+                modifier = Modifier.size(20.dp)
+            )
+        }
+
+        Icon(Icons.Outlined.ChevronRight, null, tint = AppColors.TextMuted, modifier = Modifier.size(18.dp))
     }
 }
