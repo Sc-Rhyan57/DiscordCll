@@ -72,7 +72,8 @@ dependencies {
     implementation("io.coil-kt:coil-compose:2.5.0")
     implementation("io.coil-kt:coil-gif:2.7.0")
 
-    implementation("org.webrtc:google-webrtc:1.0.32006")
+    // WebRTC — using the maintained io.github.webrtc-sdk artifact (available on Maven Central)
+    implementation("io.github.webrtc-sdk:android:125.6422.06.1")
 
     implementation("com.github.bumptech.glide:glide:4.16.0")
 }
