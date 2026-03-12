@@ -1,5 +1,7 @@
 package com.discordcall
 
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.withContext
 import okhttp3.MediaType.Companion.toMediaType
 import okhttp3.OkHttpClient
 import okhttp3.Request
@@ -22,8 +24,8 @@ object DiscordApi {
         "Mozilla/5.0 (Linux; Android 14; SM-S921U) AppleWebKit/537.36 " +
         "(KHTML, like Gecko) Chrome/129.0.0.0 Mobile Safari/537.36"
 
-    private fun get(token: String, path: String): JSONObject? {
-        return try {
+    private suspend fun get(token: String, path: String): JSONObject? = withContext(Dispatchers.IO) {
+        try {
             val resp = http.newCall(
                 Request.Builder()
                     .url("$BASE$path")
@@ -37,7 +39,7 @@ object DiscordApi {
                 Logger.w("DiscordApi", "GET $path -> ${resp.code}")
                 null
             } else {
-                val body = resp.body?.string() ?: return null
+                val body = resp.body?.string() ?: return@withContext null
                 JSONObject(body)
             }
         } catch (e: Exception) {
@@ -46,8 +48,8 @@ object DiscordApi {
         }
     }
 
-    private fun getArray(token: String, path: String): JSONArray? {
-        return try {
+    private suspend fun getArray(token: String, path: String): JSONArray? = withContext(Dispatchers.IO) {
+        try {
             val resp = http.newCall(
                 Request.Builder()
                     .url("$BASE$path")
@@ -61,7 +63,7 @@ object DiscordApi {
                 Logger.w("DiscordApi", "GET[] $path -> ${resp.code}")
                 null
             } else {
-                val body = resp.body?.string() ?: return null
+                val body = resp.body?.string() ?: return@withContext null
                 JSONArray(body)
             }
         } catch (e: Exception) {
@@ -70,8 +72,8 @@ object DiscordApi {
         }
     }
 
-    private fun post(token: String, path: String, body: JSONObject): JSONObject? {
-        return try {
+    private suspend fun post(token: String, path: String, body: JSONObject): JSONObject? = withContext(Dispatchers.IO) {
+        try {
             val resp = http.newCall(
                 Request.Builder()
                     .url("$BASE$path")
@@ -93,8 +95,8 @@ object DiscordApi {
         }
     }
 
-    private fun delete(token: String, path: String): Boolean {
-        return try {
+    private suspend fun delete(token: String, path: String): Boolean = withContext(Dispatchers.IO) {
+        try {
             val resp = http.newCall(
                 Request.Builder()
                     .url("$BASE$path")
@@ -136,7 +138,6 @@ object DiscordApi {
 
     suspend fun fetchGuildCategories(token: String, guildId: String): List<ChannelCategory> {
         val arr = getArray(token, "/guilds/$guildId/channels") ?: return emptyList()
-
         val allChannels = (0 until arr.length()).map { arr.getJSONObject(it) }
 
         fun parseOverwrites(ow: JSONArray?): List<PermissionOverwrite> {
@@ -188,16 +189,9 @@ object DiscordApi {
         uncategorized.sortBy { it.position }
 
         val result = mutableListOf<ChannelCategory>()
-
         if (uncategorized.isNotEmpty()) {
-            result.add(ChannelCategory(
-                id       = "uncategorized",
-                name     = "Canais de Voz",
-                position = -1,
-                channels = uncategorized
-            ))
+            result.add(ChannelCategory(id = "uncategorized", name = "Canais de Voz", position = -1, channels = uncategorized))
         }
-
         categories.forEach { (cat, channels) ->
             if (channels.isNotEmpty()) {
                 result.add(ChannelCategory(
@@ -208,7 +202,6 @@ object DiscordApi {
                 ))
             }
         }
-
         return result.sortedBy { it.position }
     }
 
@@ -256,9 +249,9 @@ object DiscordApi {
         val arr = getArray(token, "/guilds/$guildId/roles") ?: return emptyMap()
         val result = mutableMapOf<String, Long>()
         for (i in 0 until arr.length()) {
-            val r    = arr.getJSONObject(i)
-            val id   = r.optString("id",          "")
-            val name = r.optString("name",         "")
+            val r     = arr.getJSONObject(i)
+            val id    = r.optString("id",          "")
+            val name  = r.optString("name",         "")
             val perms = r.optString("permissions", "0").toLongOrNull() ?: 0L
             if (name == "@everyone") result[guildId] = perms
             result[id] = perms
@@ -281,8 +274,7 @@ object DiscordApi {
             channelId   = d.optString("channel_id", ""),
             content     = d.optString("content",    ""),
             authorId    = author.optString("id",       ""),
-            authorName  = author.optString("global_name", null)
-                         ?: author.optString("username", "Unknown"),
+            authorName  = author.optString("global_name", null) ?: author.optString("username", "Unknown"),
             avatar      = author.optString("avatar", null),
             timestamp   = parseTimestamp(d.optString("timestamp", "")),
             embeds      = parseEmbeds(d.optJSONArray("embeds")),
@@ -294,11 +286,7 @@ object DiscordApi {
     }
 
     private fun parseTimestamp(ts: String): Long {
-        return try {
-            java.time.Instant.parse(ts).toEpochMilli()
-        } catch (_: Exception) {
-            System.currentTimeMillis()
-        }
+        return try { java.time.Instant.parse(ts).toEpochMilli() } catch (_: Exception) { System.currentTimeMillis() }
     }
 
     private fun parseEmbeds(arr: JSONArray?): List<MessageEmbed> {
@@ -308,7 +296,7 @@ object DiscordApi {
                 title        = e.optString("title",       null),
                 description  = e.optString("description", null),
                 url          = e.optString("url",         null),
-                color        = e.optInt("color",          -1).takeIf { it >= 0 },
+                color        = e.optInt("color", -1).takeIf { it >= 0 },
                 authorName   = e.optJSONObject("author")?.optString("name"),
                 authorIcon   = e.optJSONObject("author")?.optString("icon_url"),
                 footerText   = e.optJSONObject("footer")?.optString("text"),
@@ -317,11 +305,7 @@ object DiscordApi {
                 fields       = run {
                     val fa = e.optJSONArray("fields") ?: return@run emptyList()
                     (0 until fa.length()).map { fa.getJSONObject(it) }.map { f ->
-                        EmbedField(
-                            name   = f.optString("name",   ""),
-                            value  = f.optString("value",  ""),
-                            inline = f.optBoolean("inline", false)
-                        )
+                        EmbedField(name = f.optString("name", ""), value = f.optString("value", ""), inline = f.optBoolean("inline", false))
                     }
                 }
             )
@@ -337,8 +321,8 @@ object DiscordApi {
                 url         = a.optString("url",          ""),
                 proxyUrl    = a.optString("proxy_url",    ""),
                 size        = a.optLong("size",            0L),
-                width       = a.optInt("width",   0).takeIf { it > 0 },
-                height      = a.optInt("height",  0).takeIf { it > 0 },
+                width       = a.optInt("width",  0).takeIf { it > 0 },
+                height      = a.optInt("height", 0).takeIf { it > 0 },
                 contentType = a.optString("content_type", null)
             )
         }
@@ -348,12 +332,7 @@ object DiscordApi {
         if (arr == null) return emptyList()
         return (0 until arr.length()).map { arr.getJSONObject(it) }.map { r ->
             val emoji = r.optJSONObject("emoji") ?: JSONObject()
-            MessageReaction(
-                emoji   = emoji.optString("name",  "?"),
-                emojiId = emoji.optString("id",    null),
-                count   = r.optInt("count",          0),
-                me      = r.optBoolean("me",       false)
-            )
+            MessageReaction(emoji = emoji.optString("name", "?"), emojiId = emoji.optString("id", null), count = r.optInt("count", 0), me = r.optBoolean("me", false))
         }
     }
 
