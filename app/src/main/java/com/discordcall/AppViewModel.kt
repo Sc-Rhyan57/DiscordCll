@@ -7,8 +7,6 @@ import androidx.compose.runtime.setValue
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.flow.MutableStateFlow
-import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 
@@ -22,24 +20,24 @@ sealed class UiState {
 
 class AppViewModel(application: Application) : AndroidViewModel(application) {
 
-    // ─── Auth ─────────────────────────────────────────────────────────────────
+    // ─── Token / Auth ─────────────────────────────────────────────────────────
     private var token: String = ""
 
     var loginError: String? by mutableStateOf(null)
         private set
 
-    val isLoggedIn: Boolean get() = token.isNotEmpty() && _currentUser.value != null
+    val isLoggedIn: Boolean get() = token.isNotEmpty() && currentUser != null
 
     // ─── Navigation ───────────────────────────────────────────────────────────
     var homeTab: HomeTab by mutableStateOf(HomeTab.SERVERS)
 
-    // ─── User ─────────────────────────────────────────────────────────────────
-    private val _currentUser = MutableStateFlow<DiscordUser?>(null)
-    val currentUser: StateFlow<DiscordUser?> = _currentUser
+    // ─── Current User ─────────────────────────────────────────────────────────
+    var currentUser: DiscordUser? by mutableStateOf(null)
+        private set
 
     // ─── Guilds ───────────────────────────────────────────────────────────────
-    private val _guilds = MutableStateFlow<List<DiscordGuild>>(emptyList())
-    val guilds: StateFlow<List<DiscordGuild>> = _guilds
+    var guilds: List<DiscordGuild> by mutableStateOf(emptyList())
+        private set
 
     var loadingGuilds: Boolean by mutableStateOf(false)
         private set
@@ -47,12 +45,12 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
     var favoriteGuildIds: Set<String> by mutableStateOf(emptySet())
         private set
 
-    private val _selectedGuild = MutableStateFlow<DiscordGuild?>(null)
-    val selectedGuild: StateFlow<DiscordGuild?> = _selectedGuild
+    var selectedGuild: DiscordGuild? by mutableStateOf(null)
+        private set
 
     // ─── Channels ─────────────────────────────────────────────────────────────
-    private val _categories = MutableStateFlow<List<ChannelCategory>>(emptyList())
-    val categories: StateFlow<List<ChannelCategory>> = _categories
+    var categories: List<ChannelCategory> by mutableStateOf(emptyList())
+        private set
 
     var loadingChannels: Boolean by mutableStateOf(false)
         private set
@@ -61,8 +59,8 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
         private set
 
     // ─── Voice States ─────────────────────────────────────────────────────────
-    private val _voiceStates = MutableStateFlow<List<VoiceState>>(emptyList())
-    val voiceStates: StateFlow<List<VoiceState>> = _voiceStates
+    var voiceStates: List<VoiceState> by mutableStateOf(emptyList())
+        private set
 
     // ─── Voice Call ───────────────────────────────────────────────────────────
     var isInCall: Boolean by mutableStateOf(false)
@@ -74,8 +72,8 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
     var isDeafened: Boolean by mutableStateOf(false)
         private set
 
+    // Public setter needed - screens toggle this directly
     var isCameraOn: Boolean by mutableStateOf(false)
-        private set
 
     var voiceSessionId: String by mutableStateOf("")
         private set
@@ -90,22 +88,22 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
     var showChat: Boolean by mutableStateOf(false)
 
     // ─── Messages ─────────────────────────────────────────────────────────────
-    private val _messages = MutableStateFlow<List<Message>>(emptyList())
-    val messages: StateFlow<List<Message>> = _messages
+    var messages: List<Message> by mutableStateOf(emptyList())
+        private set
 
     var loadingMessages: Boolean by mutableStateOf(false)
         private set
 
     // ─── DM Channels ──────────────────────────────────────────────────────────
-    private val _dmChannels = MutableStateFlow<List<DmChannel>>(emptyList())
-    val dmChannels: StateFlow<List<DmChannel>> = _dmChannels
+    var dmChannels: List<DmChannel> by mutableStateOf(emptyList())
+        private set
 
     var loadingDms: Boolean by mutableStateOf(false)
         private set
 
     // ─── Friends ──────────────────────────────────────────────────────────────
-    private val _friends = MutableStateFlow<List<DmRecipient>>(emptyList())
-    val friends: StateFlow<List<DmRecipient>> = _friends
+    var friends: List<DmRecipient> by mutableStateOf(emptyList())
+        private set
 
     var loadingFriends: Boolean by mutableStateOf(false)
         private set
@@ -117,12 +115,12 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
     var dmCallState: DmCallState by mutableStateOf(DmCallState.IDLE)
         private set
 
-    private val _dmVoiceStates = MutableStateFlow<List<VoiceState>>(emptyList())
-    val dmVoiceStates: StateFlow<List<VoiceState>> = _dmVoiceStates
+    var dmVoiceStates: List<VoiceState> by mutableStateOf(emptyList())
+        private set
 
     // ─── Incoming Call ────────────────────────────────────────────────────────
-    private val _incomingCall = MutableStateFlow<IncomingCall?>(null)
-    val incomingCall: StateFlow<IncomingCall?> = _incomingCall
+    var incomingCall: IncomingCall? by mutableStateOf(null)
+        private set
 
     // ─── Init ─────────────────────────────────────────────────────────────────
     init {
@@ -147,9 +145,7 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
                 val user = DiscordApi.fetchMe(t)
                 token = t
                 TokenStore.saveToken(t)
-                withContext(Dispatchers.Main) {
-                    _currentUser.value = user
-                }
+                withContext(Dispatchers.Main) { currentUser = user }
                 loadGuildsInternal()
                 loadDmChannelsInternal()
                 loadFriendsInternal()
@@ -164,18 +160,19 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
 
     fun logout() {
         TokenStore.clearToken()
-        token = ""
-        _currentUser.value  = null
-        _guilds.value       = emptyList()
-        _dmChannels.value   = emptyList()
-        _friends.value      = emptyList()
-        _messages.value     = emptyList()
-        _categories.value   = emptyList()
-        selectedChannel     = null
-        activeDmCall        = null
-        dmCallState         = DmCallState.IDLE
-        isInCall            = false
-        loginError          = null
+        token            = ""
+        currentUser      = null
+        guilds           = emptyList()
+        dmChannels       = emptyList()
+        friends          = emptyList()
+        messages         = emptyList()
+        categories       = emptyList()
+        selectedChannel  = null
+        selectedGuild    = null
+        activeDmCall     = null
+        dmCallState      = DmCallState.IDLE
+        isInCall         = false
+        loginError       = null
     }
 
     // ─── Guilds ───────────────────────────────────────────────────────────────
@@ -188,7 +185,7 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
         withContext(Dispatchers.Main) { loadingGuilds = true }
         try {
             val list = DiscordApi.fetchGuilds(token)
-            withContext(Dispatchers.Main) { _guilds.value = list }
+            withContext(Dispatchers.Main) { guilds = list }
         } finally {
             withContext(Dispatchers.Main) { loadingGuilds = false }
         }
@@ -196,7 +193,7 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
 
     fun selectGuild(guild: DiscordGuild) {
         viewModelScope.launch(Dispatchers.IO) {
-            withContext(Dispatchers.Main) { _selectedGuild.value = guild }
+            withContext(Dispatchers.Main) { selectedGuild = guild }
             loadChannelsInternal(guild.id)
         }
     }
@@ -217,11 +214,11 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
     private suspend fun loadChannelsInternal(guildId: String) {
         withContext(Dispatchers.Main) { loadingChannels = true }
         try {
-            val cats    = DiscordApi.fetchGuildCategories(token, guildId)
-            val vstates = DiscordApi.fetchGuildVoiceStates(token, guildId)
+            val cats     = DiscordApi.fetchGuildCategories(token, guildId)
+            val vstatesMap = DiscordApi.fetchGuildVoiceStates(token, guildId)
             withContext(Dispatchers.Main) {
-                _categories.value  = cats
-                _voiceStates.value = vstates.values.flatten()
+                categories  = cats
+                voiceStates = vstatesMap.values.flatten()
             }
         } finally {
             withContext(Dispatchers.Main) { loadingChannels = false }
@@ -233,10 +230,9 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
     }
 
     fun computeChannelPermissions(channel: VoiceChannel): Long {
-        val user   = _currentUser.value ?: return 0L
-        val guild  = _selectedGuild.value ?: return 0L
-        // Simplified: return CONNECT | SPEAK | VIDEO | STREAM
-        return DiscordPermissions.CONNECT or DiscordPermissions.SPEAK or DiscordPermissions.VIDEO or DiscordPermissions.STREAM
+        // Full permissions for now; can be refined with member/role data
+        return DiscordPermissions.CONNECT or DiscordPermissions.SPEAK or
+               DiscordPermissions.VIDEO   or DiscordPermissions.STREAM
     }
 
     // ─── Voice Call ───────────────────────────────────────────────────────────
@@ -244,7 +240,7 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
     fun joinVoiceChannel(channel: VoiceChannel) {
         selectedChannel = channel
         isInCall        = true
-        Logger.i("ViewModel", "Joined voice channel: ${channel.name}")
+        Logger.i("ViewModel", "Joined: ${channel.name}")
     }
 
     fun leaveVoiceChannel() {
@@ -269,10 +265,19 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
             withContext(Dispatchers.Main) { loadingMessages = true }
             try {
                 val msgs = DiscordApi.fetchMessages(token, channelId)
-                withContext(Dispatchers.Main) { _messages.value = msgs }
+                withContext(Dispatchers.Main) { messages = msgs }
             } finally {
                 withContext(Dispatchers.Main) { loadingMessages = false }
             }
+        }
+    }
+
+    fun sendMessage(content: String) {
+        val channelId = selectedChannel?.id ?: return
+        viewModelScope.launch(Dispatchers.IO) {
+            DiscordApi.sendMessage(token, channelId, content)
+            val msgs = DiscordApi.fetchMessages(token, channelId)
+            withContext(Dispatchers.Main) { messages = msgs }
         }
     }
 
@@ -280,7 +285,7 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
         viewModelScope.launch(Dispatchers.IO) {
             DiscordApi.sendMessage(token, channelId, content)
             val msgs = DiscordApi.fetchMessages(token, channelId)
-            withContext(Dispatchers.Main) { _messages.value = msgs }
+            withContext(Dispatchers.Main) { messages = msgs }
         }
     }
 
@@ -294,7 +299,7 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
         withContext(Dispatchers.Main) { loadingDms = true }
         try {
             val list = DiscordApi.fetchDmChannels(token)
-            withContext(Dispatchers.Main) { _dmChannels.value = list }
+            withContext(Dispatchers.Main) { dmChannels = list }
         } finally {
             withContext(Dispatchers.Main) { loadingDms = false }
         }
@@ -309,9 +314,9 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
             val ch = DiscordApi.openDmChannel(token, recipient.id)
             if (ch != null) {
                 withContext(Dispatchers.Main) {
-                    val current = _dmChannels.value.toMutableList()
+                    val current = dmChannels.toMutableList()
                     if (current.none { it.id == ch.id }) current.add(0, ch)
-                    _dmChannels.value = current
+                    dmChannels = current
                 }
                 loadMessages(ch.id)
             }
@@ -335,7 +340,7 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
         withContext(Dispatchers.Main) { loadingFriends = true }
         try {
             val list = DiscordApi.fetchFriends(token)
-            withContext(Dispatchers.Main) { _friends.value = list }
+            withContext(Dispatchers.Main) { friends = list }
         } finally {
             withContext(Dispatchers.Main) { loadingFriends = false }
         }
@@ -358,26 +363,26 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
                 DiscordApi.declineCall(token, dm.id)
             }
         }
-        activeDmCall = null
-        dmCallState  = DmCallState.IDLE
-        _dmVoiceStates.value = emptyList()
+        activeDmCall  = null
+        dmCallState   = DmCallState.IDLE
+        dmVoiceStates = emptyList()
     }
 
     fun answerIncomingCall() {
-        val incoming = _incomingCall.value ?: return
-        val dm = _dmChannels.value.find { it.id == incoming.channelId }
+        val incoming = incomingCall ?: return
+        val dm = dmChannels.find { it.id == incoming.channelId }
         if (dm != null) {
             activeDmCall = dm
             dmCallState  = DmCallState.ACTIVE
         }
-        _incomingCall.value = null
+        incomingCall = null
     }
 
     fun declineIncomingCall() {
-        val call = _incomingCall.value ?: return
+        val call = incomingCall ?: return
         viewModelScope.launch(Dispatchers.IO) {
             DiscordApi.declineCall(token, call.channelId)
-            withContext(Dispatchers.Main) { _incomingCall.value = null }
+            withContext(Dispatchers.Main) { incomingCall = null }
         }
     }
 }
